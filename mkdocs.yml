@@ -1,0 +1,52 @@
+site_name: netproxy
+site_description: "Rule-routed asyncio proxy server: per-destination mTLS with keystore client certificates, upstream proxy chaining, tunnels and TLS interception"
+site_url: https://jose-pr.github.io/netproxy/
+repo_url: https://github.com/jose-pr/netproxy
+repo_name: jose-pr/netproxy
+edit_uri: edit/main/docs/
+
+# Constrain the scan to docs/ so pymdownx.snippets and strict nav do not trip
+# on repo-level markdown.
+docs_dir: docs
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - content.code.copy
+
+nav:
+  - Home: index.md
+  - Guide:
+      - The API header: header.md
+  - API Reference:
+      - Overview: api/reference.md
+  - Changelog: changelog.md
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_source: true
+            show_root_heading: true
+            merge_init_into_class: true
+
+markdown_extensions:
+  - admonition
+  - tables
+  - pymdownx.snippets:
+      base_path: ["."]
+  - pymdownx.superfences
