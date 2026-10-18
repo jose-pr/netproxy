@@ -1,0 +1,36 @@
+# Category rule: nothing dot-prefixed at the repo root gets tracked except the
+# git config files re-included below. If CI lands, re-include it with: !/.github/
+/.*
+!/.gitignore
+!/.gitattributes
+
+# Private agent config. No trailing slash: .agents may be a symlink.
+# *.local.* is the unshared override and is never committed.
+.agents
+*.local.*
+CLAUDE*
+.claude
+
+# Build/dist output and generated docs site
+build/
+dist/
+site/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.hypothesis/
+.mypy_cache/
+.ruff_cache/
+.coverage*
+htmlcov/
+*.egg-info/
+.pyvenv/
+.venv/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

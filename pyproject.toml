@@ -1,0 +1,55 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "netproxy"
+version = "0.3.0.dev0"
+authors = [{ name = "Jose A." }]
+description = "Rule-routed asyncio proxy server: per-destination mTLS with keystore client certificates, upstream proxy chaining, tunnels and TLS interception"
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: AsyncIO",
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Topic :: Internet :: Proxy Servers",
+    "Typing :: Typed",
+    # No license chosen yet: PyPI rejects this classifier, so nothing can be uploaded.
+    "Private :: Do Not Upload",
+]
+dependencies = [
+    "sslcontext>=2.0.0.dev0,<3",
+    "proxylib>=1.0,<2",
+    "netimps>=0.4.0,<0.5",
+    "tomli>=2.0,<3; python_version < '3.11'",
+]
+
+[project.optional-dependencies]
+cli = ["duho>=0.7.0,<0.8"]
+dev = ["black", "build", "pytest", "netproxy[cli]"]
+docs = ["mkdocs", "mkdocs-material", "mkdocstrings[python]"]
+
+[project.scripts]
+netproxy = "netproxy.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/jose-pr/netproxy/"
+Documentation = "https://jose-pr.github.io/netproxy/"
+Issues = "https://github.com/jose-pr/netproxy/issues"
+
+[tool.hatch.build.targets.sdist]
+exclude = ["/.*", "/AGENTS.md", "/benchmarks", "*.local.*", "CLAUDE*"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/netproxy"]
+exclude = ["*.local.*", "CLAUDE*"]
+
+[tool.black]
+target-version = ["py39"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+filterwarnings = ["error"]
