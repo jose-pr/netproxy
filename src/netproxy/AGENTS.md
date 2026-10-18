@@ -198,3 +198,48 @@ listener=name)`: the router (or `route`) decides direct, TLS with a
 credential (a plain TCP client gets mTLS to the target), upstream, or reject
 (the client's connection is closed). Relaying passes half-closes through on
 plain TCP; with TLS on either side, one direction ending ends both.
+
+## The HTTP proxy listener
+
+Point clients at `http://<addresses[0]>` (`HTTP_PROXY`/`HTTPS_PROXY`, a
+browser, `curl -x`). Every connection through it is routed as a
+`Connection` with `listener="proxy"`.
+
+- **`CONNECT host:port`** (default port 443) → `scheme="https"`. DIRECT
+  routes answer `200 Connection established` and tunnel bytes. TLS routes
+  are intercepted (the proxy needs a CA; without one: `502`).
+- **Absolute-form requests** (`GET http://host/path`) → `scheme="http"` or
+  `"https"`, `path` set (so `Path` rules apply). The request goes out in
+  origin form; a TLS route upgrades a plain `http://` request to HTTPS with
+  its client credential; an `https://` request on a DIRECT route uses a
+  default verifying context. Through an upstream HTTP proxy, plain HTTP is
+  sent in absolute form with the upstream's `Proxy-Authorization` (many
+  proxies refuse CONNECT to port 80). Hop-by-hop headers and anything the
+  client's `Connection` header lists are dropped, `Host` is rewritten, the
+  response carries `Connection: close`: **one request per client
+  connection**. Bodies (`Content-Length` or chunked) and `Upgrade`
+  (WebSocket) traffic are relayed as bytes; 1xx interim responses pass
+  through.
+- **`GET /proxy.pac`** (origin form, to the proxy itself) → a PAC script
+  from the router (below); other local paths `404`.
+- Errors: `400` malformed request, `403` REJECT, `502` destination or
+  upstream unreachable / credential unavailable (the body says which, never
+  a secret), `504` timeout.
+
+## PAC files (`netproxy.pac`)
+
+```python
+def generate_pac(router: Router, proxy: str, *, egress=None) -> str
+```
+
+A `FindProxyForURL` script sending to `PROXY <proxy>` every request the
+router would not send straight to its destination; a route is `DIRECT` in the
+script only if the proxy itself would connect directly (DIRECT route with
+upstream `"direct"`, or none and no `egress`). Rules translate in order:
+`Host` → `shExpMatch`/`dnsDomainIs` (host lower-cased first), `HostRegex` →
+`RegExp` (only with `re.IGNORECASE` or no flags), `Port`, `Scheme`, IPv4
+`Network` → `isInNet` on address literals only, `Listener` → true for
+`"proxy"`, `&`/`|`/`~`. A rule with no PAC form (`Path`, IPv6 `Network`,
+custom callables) makes the script send everything not yet decided to the
+proxy, which routes exactly. `TypeError` for a router that is not a
+`Router`.

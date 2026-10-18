@@ -234,7 +234,20 @@ class UpstreamProxy:
             client.sendall(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n")
             client.close()
             return
-        host, port = target.rsplit(":", 1)
+        forward = not lines[0].upper().startswith("CONNECT ")
+        if forward:  # absolute-form: GET http://host:port/path HTTP/1.1
+            from urllib.parse import urlsplit
+
+            url = urlsplit(target)
+            host, port = url.hostname, url.port or 80
+            path = (url.path or "/") + (f"?{url.query}" if url.query else "")
+            kept = [l for l in lines[1:] if not l.lower().startswith("proxy-")]
+            request_line = " ".join([lines[0].split(" ")[0], path, "HTTP/1.1"])
+            rest = head.split(b"\r\n\r\n", 1)[1]
+            request = "\r\n".join([request_line] + kept).encode("latin-1")
+            request += b"\r\n\r\n" + rest
+        else:
+            host, port = target.rsplit(":", 1)
         try:
             # Test origins listen on 127.0.0.1 only; skip the unused ::1 attempt.
             host = "127.0.0.1" if host == "localhost" else host.strip("[]")
@@ -243,7 +256,10 @@ class UpstreamProxy:
             client.sendall(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
             client.close()
             return
-        client.sendall(b"HTTP/1.1 200 Connection established\r\n\r\n")
+        if forward:
+            origin.sendall(request)
+        else:
+            client.sendall(b"HTTP/1.1 200 Connection established\r\n\r\n")
         back = threading.Thread(target=_pump, args=(origin, client), daemon=True)
         back.start()
         _pump(client, origin)

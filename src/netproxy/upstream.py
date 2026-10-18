@@ -13,7 +13,7 @@ import base64
 import logging
 import ssl
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, List, Optional, Tuple
 
 from netimps import get_default_port, join_host
@@ -48,6 +48,12 @@ class UpstreamStream:
     """``host:port`` of the upstream proxy used, or ``None`` for direct."""
     tls: bool
     """Whether the proxy made a TLS connection to the destination."""
+    forward: bool = False
+    """The stream reaches an upstream HTTP proxy without a tunnel: send it
+    absolute-form requests (``forward_http=True`` and a proxy answer)."""
+    proxy_authorization: Optional[str] = field(default=None, repr=False)
+    """``Proxy-Authorization`` value for a ``forward`` stream, from the proxy
+    URL's credentials."""
 
 
 def _as_proxymap(upstream: Any) -> Any:
@@ -95,14 +101,21 @@ async def _open_direct(
     )
 
 
-async def _open_via_proxy(
-    connection: Connection, proxy: Any, timeout: float
+def _authorization(proxy: Any) -> Optional[str]:
+    if not proxy.username:
+        return None
+    token = f"{proxy.username}:{proxy.password or ''}".encode()
+    return f"Basic {base64.b64encode(token).decode()}"
+
+
+async def _open_proxy(
+    proxy: Any, timeout: float
 ) -> Tuple[asyncio.StreamReader, asyncio.StreamWriter]:
     scheme = (proxy.scheme or "http").lower()
     if scheme not in ("http", "https"):
         raise UpstreamError(f"{scheme} upstream proxies are not supported")
     proxy_tls = ssl.create_default_context() if scheme == "https" else None
-    reader, writer = await asyncio.wait_for(
+    return await asyncio.wait_for(
         asyncio.open_connection(
             proxy.host,
             proxy.port or get_default_port(scheme),
@@ -112,16 +125,20 @@ async def _open_via_proxy(
         ),
         timeout,
     )
+
+
+async def _open_via_proxy(
+    connection: Connection, proxy: Any, timeout: float
+) -> Tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+    reader, writer = await _open_proxy(proxy, timeout)
     try:
         head = [
             f"CONNECT {connection.authority} HTTP/1.1",
             f"Host: {connection.authority}",
         ]
-        if proxy.username:
-            token = f"{proxy.username}:{proxy.password or ''}".encode()
-            head.append(
-                f"Proxy-Authorization: Basic {base64.b64encode(token).decode()}"
-            )
+        authorization = _authorization(proxy)
+        if authorization:
+            head.append(f"Proxy-Authorization: {authorization}")
         writer.write(("\r\n".join(head) + "\r\n\r\n").encode("latin-1"))
         response = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), timeout)
         status_line = response.split(b"\r\n", 1)[0].decode("latin-1", "replace")
@@ -149,6 +166,7 @@ async def connect(
     *,
     egress: Any = None,
     timeout: float = 30.0,
+    forward_http: bool = False,
 ) -> UpstreamStream:
     """Open the connection ``route`` describes to ``connection``'s destination.
 
@@ -157,6 +175,10 @@ async def connect(
     and :class:`~netproxy.exceptions.CredentialUnavailableError` when a TLS
     route's credential cannot be loaded. A REJECT route is a ``ValueError``:
     the caller should not have asked.
+
+    ``forward_http=True`` (a plain ``http://`` request being forwarded) makes
+    a proxy answer return a stream to the proxy itself, flagged ``forward``,
+    instead of a CONNECT tunnel: proxies commonly refuse CONNECT to port 80.
     """
     if route.action is Action.REJECT:
         raise ValueError("a REJECT route opens no connection")
@@ -167,6 +189,16 @@ async def connect(
         try:
             if answer is None:
                 reader, writer = await _open_direct(connection, timeout)
+            elif forward_http and context is None:
+                reader, writer = await _open_proxy(answer, timeout)
+                return UpstreamStream(
+                    reader,
+                    writer,
+                    _describe(answer),
+                    False,
+                    forward=True,
+                    proxy_authorization=_authorization(answer),
+                )
             else:
                 reader, writer = await _open_via_proxy(connection, answer, timeout)
         except (OSError, asyncio.TimeoutError, asyncio.IncompleteReadError) as error:

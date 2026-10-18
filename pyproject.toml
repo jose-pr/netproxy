@@ -28,7 +28,8 @@ dependencies = [
 
 [project.optional-dependencies]
 cli = ["duho>=0.7.0,<0.8"]
-dev = ["black", "build", "pytest", "netproxy[cli]"]
+# dukpy executes generated PAC scripts in the tests.
+dev = ["black", "build", "pytest", "dukpy", "netproxy[cli]"]
 docs = ["mkdocs", "mkdocs-material", "mkdocstrings[python]"]
 
 [project.scripts]
