@@ -243,3 +243,31 @@ upstream `"direct"`, or none and no `egress`). Rules translate in order:
 custom callables) makes the script send everything not yet decided to the
 proxy, which routes exactly. `TypeError` for a router that is not a
 `Router`.
+
+## TLS interception (`netproxy.intercept`)
+
+Pass `ca=` to the server (an `sslcontext.issuing.CertificateAuthority` or an
+`Interceptor`). A CONNECT whose route is `Action.TLS` is then intercepted:
+the proxy connects to the destination first with the route's credential
+(failure → `502` before any TLS), answers `200`, completes the client's
+handshake with a leaf for the CONNECT host (ALPN `http/1.1` only), and
+relays the plaintext. Clients must trust `ca.certificate`. A client that
+sends bytes before reading the `200` gets `400`.
+
+```python
+class Interceptor:
+    def __init__(self, ca: CertificateAuthority, *, cache_size: int = 256, leaf_days: float = 7)
+    def server_context(self, host: str) -> ssl.SSLContext   # minted once, LRU-cached
+
+def permitted_names(router: Router) -> list[str] | None
+def create_ca(router: Router, common_name: str = "netproxy local CA", *,
+              days: float = 3650, constrain: bool = True) -> CertificateAuthority
+```
+
+`permitted_names` lists the `Host` patterns and `Network`s that bound the
+router's TLS rules (through `|` and `&`), or `None` when a TLS rule or the
+default route is not bounded that way (a regex, `Path`, a callable).
+`create_ca` makes a CA name-constrained to them; when they are `None` it
+raises `ValueError` unless `constrain=False` (an unconstrained CA can vouch
+for any site: protect its key accordingly). `Interceptor(ca)` with a non-CA
+is a `TypeError`.

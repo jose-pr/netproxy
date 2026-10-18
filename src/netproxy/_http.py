@@ -177,8 +177,7 @@ async def _connect(
         )
         return
     if route.action is Action.TLS:
-        intercept = getattr(server, "_intercept", None)
-        if intercept is None:
+        if server.interceptor is None:
             await _respond(
                 writer,
                 502,
@@ -186,7 +185,7 @@ async def _connect(
                 "this destination needs TLS interception, and the proxy has no CA\n",
             )
             return
-        await intercept(connection, route, reader, writer)
+        await server.interceptor.intercept(server, connection, route, reader, writer)
         return
     try:
         upstream = await connect(

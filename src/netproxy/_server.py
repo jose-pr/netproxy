@@ -92,7 +92,10 @@ class AsyncProxyServer:
     that set no upstream. ``tunnels`` are extra :class:`Tunnel` listeners.
     ``timeout`` bounds each connection attempt and handshake, ``idle_timeout``
     ends a relayed direction that stays silent that long. Listening beyond
-    loopback needs ``allow_remote=True``.
+    loopback needs ``allow_remote=True``. ``ca`` (an
+    ``sslcontext.issuing.CertificateAuthority`` or a
+    :class:`~netproxy.intercept.Interceptor`) enables interception of
+    CONNECT requests whose route is :attr:`~netproxy.Action.TLS`.
 
     The constructor does no I/O; :meth:`start` binds, :meth:`aclose` stops
     and waits for every connection to end.
@@ -108,8 +111,14 @@ class AsyncProxyServer:
         timeout: float = 30.0,
         idle_timeout: Optional[float] = None,
         allow_remote: bool = False,
+        ca: Any = None,
     ) -> None:
         self.router: Routing = router if router is not None else Router()
+        self.interceptor: Any = None
+        if ca is not None:
+            from .intercept import Interceptor
+
+            self.interceptor = ca if isinstance(ca, Interceptor) else Interceptor(ca)
         self.listen = listen
         self.egress = egress
         self.tunnels = tuple(tunnels)
