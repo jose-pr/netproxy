@@ -2,6 +2,7 @@
 
 [![Version](https://img.shields.io/pypi/v/netproxy.svg)](https://pypi.org/project/netproxy/)
 [![Python versions](https://img.shields.io/pypi/pyversions/netproxy.svg)](https://pypi.org/project/netproxy/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/jose-pr/netproxy/blob/main/LICENSE)
 [![Docs](https://img.shields.io/badge/docs-latest-blue.svg)](https://jose-pr.github.io/netproxy/)
 [![CI](https://img.shields.io/github/actions/workflow/status/jose-pr/netproxy/test.yml)](https://github.com/jose-pr/netproxy/actions/workflows/test.yml)
 
@@ -114,3 +115,7 @@ Pushing a tag matching `v*` triggers the release workflow: test gate → build
 GitHub release → publish. The release workflow never deploys the docs site
 itself: for a final release its last job dispatches the docs workflow at the
 tag, which owns every Pages deploy.
+
+## License
+
+MIT — see [LICENSE](https://github.com/jose-pr/netproxy/blob/main/LICENSE).

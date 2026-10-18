@@ -9,6 +9,8 @@ authors = [{ name = "Jose A." }]
 description = "Rule-routed asyncio proxy server: per-destination mTLS with keystore client certificates, upstream proxy chaining, tunnels and TLS interception"
 readme = "README.md"
 requires-python = ">=3.9"
+license = "MIT"
+license-files = ["LICENSE"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Framework :: AsyncIO",
@@ -16,8 +18,6 @@ classifiers = [
     "Operating System :: OS Independent",
     "Topic :: Internet :: Proxy Servers",
     "Typing :: Typed",
-    # No license chosen yet: PyPI rejects this classifier, so nothing can be uploaded.
-    "Private :: Do Not Upload",
 ]
 dependencies = [
     "sslcontext>=2.0.0.dev0,<3",
