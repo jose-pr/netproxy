@@ -24,7 +24,6 @@ from sslcontext import create_context
 from sslcontext.issuing import CertificateAuthority
 
 from ._connection import Connection
-from ._relay import relay
 from ._route import Action, Route, Router
 from ._streams import close_stream, start_tls
 from .exceptions import NetProxyError
@@ -50,6 +49,8 @@ class Interceptor:
         self.ca = ca
         self.cache_size = cache_size
         self.leaf_days = leaf_days
+        self.keylog: Optional[str] = None
+        """Where minted contexts log TLS secrets (set by the server's ``keylog``)."""
         self._contexts: "OrderedDict[str, ssl.SSLContext]" = OrderedDict()
         self._lock = threading.Lock()
 
@@ -65,6 +66,8 @@ class Interceptor:
                 return context
         context = create_context("server")
         context.set_alpn_protocols(["http/1.1"])
+        if self.keylog is not None:
+            context.keylog_filename = self.keylog
         self.ca.issue([host], days=self.leaf_days).load_into(context)
         with self._lock:
             self._contexts[host] = context
@@ -82,12 +85,9 @@ class Interceptor:
     ) -> None:
         """Serve one intercepted CONNECT (the request head already read)."""
         from ._http import _fail, _respond
-        from .upstream import connect
 
         try:
-            upstream = await connect(
-                connection, route, egress=server.egress, timeout=server.timeout
-            )
+            upstream = await server.open_upstream(connection, route)
         except (NetProxyError, OSError, asyncio.TimeoutError) as error:
             await _fail(writer, error, connection.authority)
             return
@@ -111,13 +111,7 @@ class Interceptor:
             )
             await close_stream(upstream.writer)
             return
-        await relay(
-            reader,
-            writer,
-            upstream.reader,
-            upstream.writer,
-            idle_timeout=server.idle_timeout,
-        )
+        await server.relay_session(connection, route, reader, writer, upstream)
 
 
 def _names(matcher: Any) -> Optional[List[str]]:

@@ -120,3 +120,22 @@ def test_tunnels_with_a_credential_are_tls(config_dir):
     server = build_server(document, base_dir=config_dir)
     (tunnel,) = server.tunnels
     assert tunnel.route is not None and tunnel.route.action is Action.TLS
+
+
+def test_recording_settings_build_owned_recorders(config_dir):
+    document = loads(
+        DOCUMENT.replace(
+            "timeout = 10\n",
+            'timeout = 10\nrecord = "out/proxy.pcapng"\nkeylog = "keys.log"\n'
+            "log_traffic = true\n",
+        )
+    )
+    (config_dir / "out").mkdir()
+    server = build_server(document, base_dir=config_dir)
+    kinds = sorted(type(r).__name__ for r in server.recorders)
+    assert kinds == ["LogRecorder", "PcapRecorder"]
+    assert server.keylog == str(config_dir / "keys.log")
+    with Origin(tls=True) as origin, ProxyServer(server=server) as running:
+        via_proxy(running, "GET", f"http://localhost:{origin.port}/rec")
+    assert (config_dir / "out" / "proxy.pcapng").stat().st_size > 0
+    assert server.recorders[1]._writer._closed  # closed by the server's aclose

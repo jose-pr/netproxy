@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   failover, loopback-only unless `allow_remote=True`.
 - TLS interception (`netproxy.intercept`) with a CA name-constrained to the
   intercepted hosts.
+- Recording (`netproxy.recording`): a `Recorder` hook per relayed session,
+  `LogRecorder`, and `PcapRecorder` (extra `capture`) writing each session
+  as a TCP connection in a pcap/pcapng file; `keylog=` writes the TLS
+  secrets of every TLS connection the proxy owns.
 - TOML configuration (`netproxy.config`) and the `netproxy` command line
   (`run`, `check`, `pac`, `ca init`, `ca show`; extra `cli`).
 

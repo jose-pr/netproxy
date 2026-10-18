@@ -15,6 +15,9 @@ Document shape (every table optional)::
     timeout = 30.0
     idle_timeout = 300.0
     allow_remote = false
+    record = "proxy.pcap"                 # every relayed session, as a capture (extra "capture")
+    keylog = "tls-keys.log"               # TLS secrets for Wireshark; a secret itself
+    log_traffic = true                    # a log line per session opened and closed
     ca = { certificate = "ca.pem", key = "ca.key", password_env = "NETPROXY_CA_PASSWORD" }
 
     [credentials.work]                    # backend = "cng" | "pkcs11" | "pem"
@@ -60,7 +63,17 @@ __all__ = ["build_router", "build_server", "load", "load_server", "loads"]
 
 _CONFIG_ENV = "NETPROXY_CONFIG"
 
-_SERVER_KEYS = {"listen", "egress", "timeout", "idle_timeout", "allow_remote", "ca"}
+_SERVER_KEYS = {
+    "listen",
+    "egress",
+    "timeout",
+    "idle_timeout",
+    "allow_remote",
+    "ca",
+    "keylog",
+    "record",
+    "log_traffic",
+}
 _CA_KEYS = {"certificate", "key", "password_env"}
 _CREDENTIAL_KEYS = {
     "backend",
@@ -396,18 +409,39 @@ class _Builder:
                         f"server.{key}", "expected a positive number of seconds"
                     )
                 options[key] = float(settings[key])
+        for key in ("allow_remote", "log_traffic"):
+            if key in settings and not isinstance(settings[key], bool):
+                raise self.fail(f"server.{key}", "expected true or false")
         if "allow_remote" in settings:
-            if not isinstance(settings["allow_remote"], bool):
-                raise self.fail("server.allow_remote", "expected true or false")
             options["allow_remote"] = settings["allow_remote"]
-        return AsyncProxyServer(
+        if "keylog" in settings:
+            options["keylog"] = self.path(settings["keylog"], "server.keylog")
+        recorders: List[Any] = []
+        if settings.get("log_traffic"):
+            from .recording import LogRecorder
+
+            recorders.append(LogRecorder())
+        owned: List[Any] = []
+        if "record" in settings:
+            from .recording import PcapRecorder
+
+            target = self.path(settings["record"], "server.record")
+            kind = "pcapng" if target.lower().endswith(".pcapng") else "pcap"
+            try:
+                owned.append(PcapRecorder(target, format=kind))
+            except ImportError as error:
+                raise self.fail("server.record", str(error)) from None
+        server = AsyncProxyServer(
             router,
             listen=settings.get("listen"),
             egress=self.egress(settings.get("egress")),
             tunnels=tunnels,
             ca=self.ca(settings["ca"]) if "ca" in settings else None,
+            recorders=recorders + owned,
             **options,
         )
+        server._owned_recorders.extend(owned)
+        return server
 
 
 def build_router(

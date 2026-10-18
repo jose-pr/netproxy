@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import socket
 import threading
 from dataclasses import dataclass
-from typing import Any, Iterable, List, Optional, Set, Tuple
+from typing import Any, Iterable, List, Optional, Set, Tuple, Union
 
 from netimps import bind, is_wildcard, join_host, parse_listen, split_host
 
@@ -16,7 +17,8 @@ from ._relay import relay
 from ._streams import close_stream
 from ._route import Action, Route, Router, Routing
 from .exceptions import NetProxyError
-from .upstream import connect
+from .recording import _Recording
+from .upstream import UpstreamStream, connect
 
 __all__ = ["AsyncProxyServer", "ProxyServer", "Tunnel"]
 
@@ -97,6 +99,10 @@ class AsyncProxyServer:
     ``sslcontext.issuing.CertificateAuthority`` or a
     :class:`~netproxy.intercept.Interceptor`) enables interception of
     CONNECT requests whose route is :attr:`~netproxy.Action.TLS`.
+    ``recorders`` (see :mod:`netproxy.recording`) see every relayed
+    connection. ``keylog`` names a file that receives the TLS secrets of every
+    TLS connection the proxy makes or ends, in the ``SSLKEYLOGFILE`` format
+    Wireshark reads; treat it as a secret.
 
     The constructor does no I/O; :meth:`start` binds, :meth:`aclose` stops
     and waits for every connection to end.
@@ -113,13 +119,19 @@ class AsyncProxyServer:
         idle_timeout: Optional[float] = None,
         allow_remote: bool = False,
         ca: Any = None,
+        recorders: Iterable[Any] = (),
+        keylog: Union[str, "os.PathLike[str]", None] = None,
     ) -> None:
         self.router: Routing = router if router is not None else Router()
+        self.recorders = tuple(recorders)
+        self._owned_recorders: List[Any] = []
+        self.keylog = os.fspath(keylog) if keylog is not None else None
         self.interceptor: Any = None
         if ca is not None:
             from .intercept import Interceptor
 
             self.interceptor = ca if isinstance(ca, Interceptor) else Interceptor(ca)
+            self.interceptor.keylog = self.keylog
         self.listen = listen
         self.egress = egress
         self.tunnels = tuple(tunnels)
@@ -204,6 +216,10 @@ class AsyncProxyServer:
             await server.wait_closed()
         self._servers.clear()
         self._proxy_servers.clear()
+        # Recorders the server made (from a configuration file) are its to close.
+        for recorder in self._owned_recorders:
+            recorder.close()
+        self._owned_recorders.clear()
 
     # ------------------------------------------------------- connections
 
@@ -212,6 +228,68 @@ class AsyncProxyServer:
         if task is not None:
             self._tasks.add(task)
             task.add_done_callback(self._tasks.discard)
+
+    async def open_upstream(
+        self, connection: Connection, route: Route, *, forward_http: bool = False
+    ) -> UpstreamStream:
+        """:func:`netproxy.upstream.connect` with this server's egress,
+        timeout and key log."""
+        return await connect(
+            connection,
+            route,
+            egress=self.egress,
+            timeout=self.timeout,
+            forward_http=forward_http,
+            keylog=self.keylog,
+        )
+
+    def start_recording(
+        self,
+        connection: Connection,
+        route: Route,
+        client: asyncio.StreamWriter,
+        upstream: UpstreamStream,
+    ) -> Optional[_Recording]:
+        """A recording of one session, or ``None`` with no recorders."""
+        if not self.recorders:
+            return None
+        return _Recording.start(
+            self.recorders,
+            connection,
+            route,
+            client.get_extra_info("peername"),
+            upstream.writer.get_extra_info("peername"),
+        )
+
+    async def relay_session(
+        self,
+        connection: Connection,
+        route: Route,
+        reader: asyncio.StreamReader,
+        writer: asyncio.StreamWriter,
+        upstream: UpstreamStream,
+        *,
+        recording: Optional[_Recording] = None,
+        before_server: Any = None,
+    ) -> None:
+        """Relay ``reader``/``writer`` with ``upstream``, recorded when the
+        server has recorders (``recording`` passes one already started)."""
+        if recording is None:
+            recording = self.start_recording(connection, route, writer, upstream)
+        try:
+            await relay(
+                reader,
+                writer,
+                upstream.reader,
+                upstream.writer,
+                idle_timeout=self.idle_timeout,
+                on_data=recording.data if recording else None,
+                on_end=recording.ended if recording else None,
+                before_server=before_server,
+            )
+        finally:
+            if recording is not None:
+                recording.closed()
 
     async def _accept_proxy(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
@@ -246,16 +324,8 @@ class AsyncProxyServer:
                     "netproxy: rejected %s (%s)", connection.authority, route.name
                 )
                 return
-            upstream = await connect(
-                connection, route, egress=self.egress, timeout=self.timeout
-            )
-            await relay(
-                reader,
-                writer,
-                upstream.reader,
-                upstream.writer,
-                idle_timeout=self.idle_timeout,
-            )
+            upstream = await self.open_upstream(connection, route)
+            await self.relay_session(connection, route, reader, writer, upstream)
         except (NetProxyError, OSError) as error:
             _log.warning(
                 "netproxy: %s via %s: %s", connection.authority, tunnel.name, error

@@ -9,7 +9,8 @@ self-contained. Development documentation lives with the source at
 Import from the root `netproxy`; topic modules are named in each section.
 Modules whose names start with `_` are private.
 
-`pip install netproxy`; extra `cli` adds the `netproxy` command (`duho`).
+`pip install netproxy`; extras: `cli` adds the `netproxy` command (`duho`),
+`capture` adds `PcapRecorder` (`pktcap`).
 
 `netproxy.__version__` is the installed distribution's version.
 
@@ -158,7 +159,8 @@ JavaScript PAC engines in proxylib 1.0 crash on concurrent use.
 class AsyncProxyServer:
     def __init__(self, router: Routing | None = None, *, listen=None, egress=None,
                  tunnels: Iterable[Tunnel] = (), timeout: float = 30.0,
-                 idle_timeout: float | None = None, allow_remote: bool = False)
+                 idle_timeout: float | None = None, allow_remote: bool = False,
+                 ca=None, recorders: Iterable[Recorder] = (), keylog=None)
     async def start(self) -> None
     async def serve_forever(self) -> None
     async def aclose(self) -> None          # also `async with`
@@ -182,7 +184,13 @@ does no I/O; `start()` binds (`OSError` when an address is taken) and is
 idempotent; `aclose()` stops listening, cancels every connection and waits
 for them, and is harmless twice. `ProxyServer` runs the same server on its
 own event loop in a daemon thread; `start()` returns once bound or raises
-what binding raised.
+what binding raised. `ca` enables interception (below); `recorders` see
+every relayed session (`netproxy.recording`); `keylog` is a file that
+receives, in the `SSLKEYLOGFILE` format, the secrets of every TLS
+connection the proxy makes or ends (set as each context's
+`keylog_filename`, including a context you passed in a route): a secret.
+`open_upstream`, `start_recording` and `relay_session` are the building
+blocks the listeners use, public for custom front-ends.
 
 ```python
 @dataclass(frozen=True)
@@ -272,6 +280,39 @@ raises `ValueError` unless `constrain=False` (an unconstrained CA can vouch
 for any site: protect its key accordingly). `Interceptor(ca)` with a non-CA
 is a `TypeError`.
 
+## Recording traffic (`netproxy.recording`)
+
+```python
+@dataclass(frozen=True)
+class Session:
+    id: int; connection: Connection; route: Route
+    client: tuple[str, int] | None    # the client's address
+    server: tuple[str, int] | None    # where the proxy connected (destination or upstream proxy)
+    started: float
+
+class Recorder(Protocol):
+    def opened(self, session) -> None
+    def data(self, session, sender: str, data: bytes) -> None   # sender: "client" | "server"
+    def ended(self, session, sender: str) -> None                # that direction is over
+    def closed(self, session) -> None
+
+class LogRecorder:   # (logger="netproxy.traffic", level=logging.INFO)
+class PcapRecorder:  # (path, *, format="pcap" | "pcapng"); close() / with; extra "capture"
+```
+
+Recorders see what crossed the proxy: plaintext for TLS routes (the proxy
+made or ended that TLS) and the HTTP heads as rewritten; ciphertext for a
+tunnel it only relayed. Calls come from the event loop's thread, in order
+per session, and must return quickly. A recorder that raises is logged at
+WARNING and gets nothing more of that session; traffic is never affected.
+`LogRecorder` logs one line when a session opens and one with the octets
+each way when it closes. `PcapRecorder` writes each session as a TCP
+connection between the client's address and `session.server` (through
+`pktcap.TCPFlowWriter`), so Wireshark's *Follow TCP Stream* shows it; TLS
+routes are in plaintext on their TLS port (*Decode As* HTTP). Without the
+`capture` extra it raises `ImportError` naming the extra. Recorded plaintext
+is as sensitive as the credentials that opened the sessions.
+
 ## Configuration files (`netproxy.config`)
 
 ```python
@@ -300,6 +341,9 @@ timeout = 30.0
 idle_timeout = 300.0
 allow_remote = false
 ca = { certificate = "ca.pem", key = "ca.key", password_env = "NETPROXY_CA_PASSWORD" }
+record = "proxy.pcap"            # PcapRecorder (".pcapng" picks pcapng); closed by the server
+keylog = "tls-keys.log"          # the server's keylog
+log_traffic = true               # a LogRecorder
 
 [credentials.work]                # backend: "cng" | "pkcs11" | "pem"
 backend = "cng"

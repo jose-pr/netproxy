@@ -167,6 +167,7 @@ async def connect(
     egress: Any = None,
     timeout: float = 30.0,
     forward_http: bool = False,
+    keylog: Optional[str] = None,
 ) -> UpstreamStream:
     """Open the connection ``route`` describes to ``connection``'s destination.
 
@@ -179,10 +180,13 @@ async def connect(
     ``forward_http=True`` (a plain ``http://`` request being forwarded) makes
     a proxy answer return a stream to the proxy itself, flagged ``forward``,
     instead of a CONNECT tunnel: proxies commonly refuse CONNECT to port 80.
+    ``keylog`` is set as the TLS context's ``keylog_filename``.
     """
     if route.action is Action.REJECT:
         raise ValueError("a REJECT route opens no connection")
     context = await _client_context(route) if route.action is Action.TLS else None
+    if context is not None and keylog is not None:
+        context.keylog_filename = keylog
     failures = []
     for answer in await resolve_upstream(connection, route, egress):
         where = "direct" if answer is None else _describe(answer)

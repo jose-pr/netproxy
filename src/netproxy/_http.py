@@ -16,10 +16,8 @@ from urllib.parse import urlsplit
 from netimps import get_default_port, join_host, split_host
 
 from ._connection import Connection
-from ._relay import relay
 from ._route import Action, Route
 from .exceptions import CredentialUnavailableError, NetProxyError
-from .upstream import connect
 
 __all__ = ["LISTENER", "handle_http_proxy"]
 
@@ -188,20 +186,12 @@ async def _connect(
         await server.interceptor.intercept(server, connection, route, reader, writer)
         return
     try:
-        upstream = await connect(
-            connection, route, egress=server.egress, timeout=server.timeout
-        )
+        upstream = await server.open_upstream(connection, route)
     except (NetProxyError, OSError, asyncio.TimeoutError) as error:
         await _fail(writer, error, connection.authority)
         return
     writer.write(b"HTTP/1.1 200 Connection established" + _HEAD_END)
-    await relay(
-        reader,
-        writer,
-        upstream.reader,
-        upstream.writer,
-        idle_timeout=server.idle_timeout,
-    )
+    await server.relay_session(connection, route, reader, writer, upstream)
 
 
 # ---------------------------------------------------------- forwarded HTTP
@@ -256,13 +246,7 @@ async def _forward(
             _verifying_context(), upstream=route.upstream, name=route.name
         )
     try:
-        upstream = await connect(
-            connection,
-            route,
-            egress=server.egress,
-            timeout=server.timeout,
-            forward_http=True,
-        )
+        upstream = await server.open_upstream(connection, route, forward_http=True)
     except (NetProxyError, OSError, asyncio.TimeoutError) as error:
         await _fail(writer, error, connection.authority)
         return
@@ -286,7 +270,17 @@ async def _forward(
             headers.append(("Proxy-Authorization", upstream.proxy_authorization))
     else:
         first = f"{method} {path} HTTP/1.1"
-    upstream.writer.write(_encode(first, headers))
+    request_head = _encode(first, headers)
+    upstream.writer.write(request_head)
+    # The heads are rewritten here, outside the relay: record them as sent.
+    recording = server.start_recording(connection, route, writer, upstream)
+    if recording is not None:
+        recording.data("client", request_head)
+
+    def to_client(octets: bytes) -> None:
+        writer.write(octets)
+        if recording is not None:
+            recording.data("server", octets)
 
     async def rewrite_response() -> None:
         # 1xx interim responses pass through; the final head is told to close.
@@ -297,12 +291,12 @@ async def _forward(
             response = _Head(raw)
             status = response.first.split(" ", 2)[1] if " " in response.first else ""
             if status.startswith("1") and status != "101":
-                writer.write(raw)
+                to_client(raw)
                 continue
             if status == "101":
-                writer.write(raw)
+                to_client(raw)
             else:
-                writer.write(
+                to_client(
                     _encode(
                         response.first,
                         response.end_to_end() + [("Connection", "close")],
@@ -311,12 +305,13 @@ async def _forward(
             await writer.drain()
             return
 
-    await relay(
+    await server.relay_session(
+        connection,
+        route,
         reader,
         writer,
-        upstream.reader,
-        upstream.writer,
-        idle_timeout=server.idle_timeout,
+        upstream,
+        recording=recording,
         before_server=rewrite_response,
     )
 

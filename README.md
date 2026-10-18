@@ -23,6 +23,8 @@ Documentation: <https://jose-pr.github.io/netproxy/>.
 - **Three ways in** — an HTTP proxy (CONNECT and plain HTTP, upgraded to
   HTTPS when a rule says so), local tunnel ports, and optional TLS
   interception with a name-constrained local CA.
+- **Recording** — every session as a capture Wireshark follows (plaintext
+  for the TLS the proxy owns), a TLS key log, or your own `Recorder`.
 - **Upstream proxies** — chain through a corporate proxy chosen by
   [`proxylib`](https://github.com/jose-pr/proxylib) (PAC, environment,
   system settings).
@@ -36,6 +38,7 @@ pip install netproxy
 | Extra | Adds | Needed for |
 | --- | --- | --- |
 | `cli` | `duho` | the `netproxy` command |
+| `capture` | `pktcap` | `PcapRecorder`: sessions written as a pcap/pcapng capture |
 
 ## Quick start
 
@@ -94,6 +97,7 @@ netproxy ca init -c netproxy.toml      # local CA for intercepting https:// clie
 | `netproxy.rules` | matchers: host globs, regex, ports, networks, paths |
 | `netproxy.upstream` | reaching destinations directly or through upstream proxies |
 | `netproxy.intercept` | TLS interception with a name-constrained local CA |
+| `netproxy.recording` | recorders: a hook per session, a log, pcap files |
 | `netproxy.pac` | PAC scripts generated from the rules |
 | `netproxy.config` | TOML configuration files |
 | `netproxy.exceptions` | the package's errors |

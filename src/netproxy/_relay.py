@@ -5,10 +5,13 @@ from __future__ import annotations
 import asyncio
 from typing import Awaitable, Callable, Optional
 
-__all__ = ["DataHook", "relay"]
+__all__ = ["DataHook", "EndHook", "relay"]
 
 DataHook = Callable[[str, bytes], None]
 """Called with ``"client"`` or ``"server"`` (who sent it) and the bytes."""
+
+EndHook = Callable[[str], None]
+"""Called with ``"client"`` or ``"server"`` when that side's direction ends."""
 
 _CHUNK = 65536
 
@@ -20,6 +23,7 @@ async def _pump(
     idle_timeout: Optional[float],
     on_data: Optional[DataHook],
     before: Optional[Callable[[], Awaitable[None]]] = None,
+    on_end: Optional[EndHook] = None,
 ) -> None:
     try:
         if before is not None:
@@ -33,6 +37,8 @@ async def _pump(
             target.write(chunk)
             await target.drain()
     finally:
+        if on_end is not None:
+            on_end(direction)
         # Pass the end on: half-close where the transport can (plain TCP),
         # otherwise (TLS) the whole connection ends with this direction.
         try:
@@ -53,18 +59,27 @@ async def relay(
     idle_timeout: Optional[float] = None,
     on_data: Optional[DataHook] = None,
     before_server: Optional[Callable[[], Awaitable[None]]] = None,
+    on_end: Optional[EndHook] = None,
 ) -> None:
     """Relay until both directions have ended, then close both streams.
 
     ``idle_timeout`` (seconds) ends a direction that receives nothing for that
     long. ``before_server`` runs before server-to-client bytes flow (while the
-    client's keep flowing), e.g. to rewrite a response head. Connection errors
-    end the relay quietly: either side going away is how a proxied connection
+    client's keep flowing), e.g. to rewrite a response head. ``on_data`` sees
+    each chunk and ``on_end`` each direction's end. Connection errors end the
+    relay quietly: either side going away is how a proxied connection
     normally finishes.
     """
     pumps = [
         asyncio.ensure_future(
-            _pump(client_reader, server_writer, "client", idle_timeout, on_data)
+            _pump(
+                client_reader,
+                server_writer,
+                "client",
+                idle_timeout,
+                on_data,
+                on_end=on_end,
+            )
         ),
         asyncio.ensure_future(
             _pump(
@@ -74,6 +89,7 @@ async def relay(
                 idle_timeout,
                 on_data,
                 before_server,
+                on_end,
             )
         ),
     ]
