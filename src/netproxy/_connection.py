@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
-from netimps import join_host
+from netimps import get_default_port, join_host
 
 __all__ = ["Connection", "normalize_host"]
 
@@ -49,6 +49,11 @@ class Connection:
 
     @property
     def url(self) -> str:
-        """The destination as a URL, the key an upstream ``ProxyMap`` is asked."""
+        """The destination as a URL, the key an upstream ``ProxyMap`` is asked;
+        the scheme's default port is left out, as clients and PAC scripts write it."""
         scheme = "https" if self.scheme == "tcp" else self.scheme
-        return f"{scheme}://{self.authority}{self.path or '/'}"
+        if self.port == get_default_port(scheme):
+            host = f"[{self.host}]" if ":" in self.host else self.host
+        else:
+            host = self.authority
+        return f"{scheme}://{host}{self.path or '/'}"

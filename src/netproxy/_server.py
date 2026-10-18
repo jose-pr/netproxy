@@ -13,6 +13,7 @@ from netimps import bind, is_wildcard, join_host, parse_listen, split_host
 
 from ._connection import Connection
 from ._relay import relay
+from ._streams import close_stream
 from ._route import Action, Route, Router, Routing
 from .exceptions import NetProxyError
 from .upstream import connect
@@ -221,7 +222,7 @@ class AsyncProxyServer:
 
             await handle_http_proxy(self, reader, writer)
         finally:
-            writer.close()
+            await close_stream(writer)
 
     async def _accept_tunnel(
         self,
@@ -260,7 +261,7 @@ class AsyncProxyServer:
                 "netproxy: %s via %s: %s", connection.authority, tunnel.name, error
             )
         finally:
-            writer.close()
+            await close_stream(writer)
 
 
 class ProxyServer:
@@ -271,8 +272,18 @@ class ProxyServer:
     binding raised); :meth:`close` stops the server and joins the thread.
     """
 
-    def __init__(self, router: Optional[Routing] = None, **options: Any) -> None:
-        self._server = AsyncProxyServer(router, **options)
+    def __init__(
+        self,
+        router: Optional[Routing] = None,
+        *,
+        server: Optional[AsyncProxyServer] = None,
+        **options: Any,
+    ) -> None:
+        if server is not None and (router is not None or options):
+            raise TypeError("pass server= alone, or router and options, not both")
+        self._server = (
+            server if server is not None else AsyncProxyServer(router, **options)
+        )
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._thread: Optional[threading.Thread] = None
 
@@ -320,6 +331,8 @@ class ProxyServer:
             started.set()
             loop.run_forever()
             loop.run_until_complete(self._server.aclose())
+            # Let transports closed during aclose() finish before the loop goes.
+            loop.run_until_complete(asyncio.sleep(0.05))
             loop.close()
 
         self._thread = threading.Thread(target=run, name="netproxy", daemon=True)

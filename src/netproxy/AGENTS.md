@@ -25,7 +25,7 @@ class Connection:
     client: tuple[str, int] | None = None
     listener: str = ""          # name of the accepting listener
     authority: str              # property: "host:port", IPv6 bracketed
-    url: str                    # property: what an upstream ProxyMap is asked
+    url: str                    # property: what an upstream ProxyMap is asked; default port omitted
 ```
 
 ## Matchers (`netproxy.rules`)
@@ -166,7 +166,7 @@ class AsyncProxyServer:
     port: int                               # first HTTP proxy port; RuntimeError before start()
     def tunnel_address(self, tunnel) -> tuple[str, int]
 
-class ProxyServer:                          # same arguments; `with`, start(), close()
+class ProxyServer:                          # same arguments, or server=AsyncProxyServer; `with`, start(), close()
     server: AsyncProxyServer
 ```
 
@@ -271,3 +271,90 @@ default route is not bounded that way (a regex, `Path`, a callable).
 raises `ValueError` unless `constrain=False` (an unconstrained CA can vouch
 for any site: protect its key accordingly). `Interceptor(ca)` with a non-CA
 is a `TypeError`.
+
+## Configuration files (`netproxy.config`)
+
+```python
+def loads(text: str | bytes, *, path: str | None = None) -> dict
+def load(source: str | os.PathLike) -> dict
+def default_path() -> pathlib.Path
+def build_router(document: Mapping, *, base_dir=None) -> Router
+def build_server(document: Mapping, *, base_dir=None, label="<document>") -> AsyncProxyServer
+def load_server(source: str | os.PathLike) -> AsyncProxyServer
+```
+
+TOML (TOML's own dialect: duplicate keys are errors, values typed). `loads`
+and `load` return plain data; bytes are strict UTF-8, one leading BOM
+ignored. `build_*` turn data into objects; relative paths resolve against
+`base_dir` (the file's directory for `load_server`). Every failure is a
+`ConfigError` (`path`, `lineno`, `colno` when known; a `table.key: problem`
+message that never quotes the document); unknown tables and keys are errors.
+`default_path()` is `NETPROXY_CONFIG`, else `netproxy/config.toml` under
+`%APPDATA%` (Windows) or `$XDG_CONFIG_HOME`/`~/.config`.
+
+```toml
+[server]
+listen = "127.0.0.1:3128"        # or a list
+egress = "system"                 # "system" | "env" | "auto" | "direct" | "pac:<url>" | a proxy URL
+timeout = 30.0
+idle_timeout = 300.0
+allow_remote = false
+ca = { certificate = "ca.pem", key = "ca.key", password_env = "NETPROXY_CA_PASSWORD" }
+
+[credentials.work]                # backend: "cng" | "pkcs11" | "pem"
+backend = "cng"
+options = { store = "MY" }        # the backend's constructor keywords
+query = { subject = "alice" }     # find_identity() keywords
+pin_env = "NETPROXY_WORK_PIN"     # or pin = "keystore" (OS dialog / PIN pad); PINs never in the file
+cafile = "corp-ca.pem"            # also capath; verify = false
+# backend = "pem": certificate = "...", key = "...", password_env = "..."
+
+[[rules]]
+match = "*.corp.example"          # parse_matcher pattern, or a list (any of)
+port = 443                        # optional int or list
+path = "^/api/"                   # optional regex (forwarded HTTP only)
+action = "tls"                    # "tls" | "direct" | "reject"
+credential = "work"               # required with "tls"
+upstream = "direct"               # optional
+name = "corp"
+
+[default]                         # the router's default route; same keys as a rule minus match/port/path
+action = "direct"
+
+[[tunnels]]
+listen = "127.0.0.1:15432"
+target = "db.corp.example:5432"
+credential = "work"               # optional; implies action = "tls"
+```
+
+`egress`: `"system"` → `proxylib.system_proxy()`, `"env"` →
+`EnvProxyConfig.from_env()`, `"auto"` → `proxylib.auto_proxy()`,
+`"pac:<url>"` → `proxylib.load_pac(url)` (fetched when the server is built;
+`OSError` if it cannot be), any other string is a proxy URL or PAC result.
+`pin_env`/`password_env` name environment variables read when the secret is
+needed (an unset variable means no PIN: signing fails at once).
+
+## Command line
+
+`pip install "netproxy[cli]"`; `netproxy` or `python -m netproxy`. Every
+command takes `-c/--config FILE` (default `default_path()`), and the root
+`-v`/`-q`/`--loglevel`. Exit status: `0` done, `1` failed, `2` invocation or
+configuration wrong; errors are one line on stderr.
+
+| Command | Does | Output |
+| --- | --- | --- |
+| `netproxy run` | serve until Ctrl-C | `proxy http://HOST:PORT` per listener, `tunnel HOST:PORT -> TARGET` per tunnel |
+| `netproxy check TARGET [--listener NAME] [--json]` | which rule/route a URL or `HOST:PORT` gets, without connecting | `destination=... rule=... action=... credential=... upstream=...` |
+| `netproxy pac [--proxy HOST:PORT]` | the PAC script for the rules | the script |
+| `netproxy ca init [--force] [--unconstrained]` | create the interception CA at `[server.ca]`'s paths, name-constrained to the TLS rules (refuses to overwrite without `--force`; key encrypted with `password_env` when set) | the certificate path |
+| `netproxy ca show` | the CA certificate clients must trust | PEM |
+
+Without the `cli` extra the command prints which extra to install and exits
+`1`.
+
+## Environment variables
+
+| Variable | Sets | Default |
+| --- | --- | --- |
+| `NETPROXY_CONFIG` | the configuration file `default_path()` and the command line use | platform config dir |
+| named by `pin_env` / `password_env` | a credential's PIN, a key or CA password (secret) | unset: none |

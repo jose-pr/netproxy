@@ -36,11 +36,65 @@ pip install netproxy
 | --- | --- | --- |
 | `cli` | `duho` | the `netproxy` command |
 
+## Quick start
+
+A configuration file routes `*.corp.example` through a client certificate
+from the Windows store; everything else goes direct:
+
+```toml
+[server]
+listen = "127.0.0.1:3128"
+
+[credentials.work]
+backend = "cng"
+query = { subject = "alice" }
+
+[[rules]]
+match = "*.corp.example"
+action = "tls"
+credential = "work"
+```
+
+```bash
+netproxy run -c netproxy.toml
+curl -x http://127.0.0.1:3128 http://api.corp.example/   # sent as HTTPS with alice's certificate
+```
+
+The same from Python:
+
+```python
+import asyncio
+from netproxy import AsyncProxyServer, Credential, Route, Router
+
+work = Credential(backend="cng", query={"subject": "alice"})
+router = Router([("*.corp.example", Route.with_tls(work))])
+
+async def main():
+    async with AsyncProxyServer(router, listen="127.0.0.1:3128") as server:
+        await server.serve_forever()
+
+asyncio.run(main())
+```
+
+## Command line
+
+```bash
+netproxy run -c netproxy.toml          # serve
+netproxy check -c netproxy.toml https://api.corp.example/   # which rule and route, no connection
+netproxy pac -c netproxy.toml          # PAC script for browsers
+netproxy ca init -c netproxy.toml      # local CA for intercepting https:// clients
+```
+
 ## API overview
 
 | Module | Purpose |
 | --- | --- |
 | `netproxy` | the server, routes, rules and credentials |
+| `netproxy.rules` | matchers: host globs, regex, ports, networks, paths |
+| `netproxy.upstream` | reaching destinations directly or through upstream proxies |
+| `netproxy.intercept` | TLS interception with a name-constrained local CA |
+| `netproxy.pac` | PAC scripts generated from the rules |
+| `netproxy.config` | TOML configuration files |
 | `netproxy.exceptions` | the package's errors |
 
 ## Development
