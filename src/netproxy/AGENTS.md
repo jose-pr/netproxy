@@ -151,3 +151,50 @@ never proxy credentials) or the TLS handshake fails;
 route. Connections race IPv6/IPv4 addresses (Happy Eyeballs, 250 ms).
 Every `ProxyMap` lookup in the process is serialised on one lock, because
 JavaScript PAC engines in proxylib 1.0 crash on concurrent use.
+
+## The server (`netproxy`)
+
+```python
+class AsyncProxyServer:
+    def __init__(self, router: Routing | None = None, *, listen=None, egress=None,
+                 tunnels: Iterable[Tunnel] = (), timeout: float = 30.0,
+                 idle_timeout: float | None = None, allow_remote: bool = False)
+    async def start(self) -> None
+    async def serve_forever(self) -> None
+    async def aclose(self) -> None          # also `async with`
+    addresses: list[tuple[str, int]]        # HTTP proxy listeners, ports read back
+    port: int                               # first HTTP proxy port; RuntimeError before start()
+    def tunnel_address(self, tunnel) -> tuple[str, int]
+
+class ProxyServer:                          # same arguments; `with`, start(), close()
+    server: AsyncProxyServer
+```
+
+`router` defaults to `Router()` (everything direct). `listen` uses the
+`netimps.parse_listen` grammar (`"127.0.0.1:3128"`, a list of them);
+`None` → `127.0.0.1` on a free port; `()` → no HTTP proxy listener (tunnels
+only). Listening on anything but loopback raises `ValueError` unless
+`allow_remote=True`: whoever reaches the proxy uses its client credentials.
+`egress` is the upstream for routes that set none (a proxylib `ProxyMap` or a
+proxy/PAC-result string). `timeout` bounds each connect and handshake;
+`idle_timeout` ends a relayed direction silent that long. The constructor
+does no I/O; `start()` binds (`OSError` when an address is taken) and is
+idempotent; `aclose()` stops listening, cancels every connection and waits
+for them, and is harmless twice. `ProxyServer` runs the same server on its
+own event loop in a daemon thread; `start()` returns once bound or raises
+what binding raised.
+
+```python
+@dataclass(frozen=True)
+class Tunnel:
+    listen: str              # "127.0.0.1:15432"
+    target: str              # "db.corp.example:5432"; no port → ValueError
+    route: Route | None = None   # None: the server's router decides
+    name: str = ""           # default "tunnel:<target>"
+```
+
+A tunnel connection is a `Connection(target host, port, scheme="tcp",
+listener=name)`: the router (or `route`) decides direct, TLS with a
+credential (a plain TCP client gets mTLS to the target), upstream, or reject
+(the client's connection is closed). Relaying passes half-closes through on
+plain TCP; with TLS on either side, one direction ending ends both.

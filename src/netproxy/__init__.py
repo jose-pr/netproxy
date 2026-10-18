@@ -6,6 +6,7 @@ from importlib.metadata import PackageNotFoundError, version
 
 from ._connection import Connection
 from ._credential import Credential
+from ._server import AsyncProxyServer, ProxyServer, Tunnel
 from ._route import Action, Route, Router, Routing, Rule, TLSSource, Upstream
 from .exceptions import (
     ConfigError,
@@ -22,6 +23,9 @@ except PackageNotFoundError:  # running from a checkout without an install
 
 __all__ = [
     "Action",
+    "AsyncProxyServer",
+    "ProxyServer",
+    "Tunnel",
     "Connection",
     "Credential",
     "Route",
