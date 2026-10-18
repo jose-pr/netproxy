@@ -122,3 +122,32 @@ callable returning one); `pem=(certificate, key, password)` for
 calls it from a worker thread) and caches; failures raise
 `CredentialUnavailableError` and are not cached. `invalidate()` forces a
 fresh lookup (a renewed certificate).
+
+## Reaching destinations (`netproxy.upstream`)
+
+```python
+async def connect(connection: Connection, route: Route, *, egress=None,
+                  timeout: float = 30.0) -> UpstreamStream
+async def resolve_upstream(connection, route, egress=None) -> list[Proxy | None]
+
+@dataclass
+class UpstreamStream:
+    reader: asyncio.StreamReader
+    writer: asyncio.StreamWriter
+    via: str | None      # "scheme://host:port" of the upstream proxy, None = direct
+    tls: bool            # the proxy made the TLS connection
+```
+
+`connect` asks the route's `upstream` (else `egress`) for answers to
+`connection.url` and tries them in order (a PAC `PROXY a; DIRECT` fails over);
+`None`/`KeyError`/empty means direct. HTTP and HTTPS upstream proxies are
+reached with `CONNECT` (Basic `Proxy-Authorization` from the proxy URL's
+credentials; missing port → the scheme's default); SOCKS answers are skipped
+as unsupported. A TLS route then upgrades the stream with its context and
+SNI = `connection.host` (a `Credential` is built in a worker thread). Raises
+`UpstreamError` when every answer fails (one message listing each attempt,
+never proxy credentials) or the TLS handshake fails;
+`CredentialUnavailableError` from the credential; `ValueError` for a REJECT
+route. Connections race IPv6/IPv4 addresses (Happy Eyeballs, 250 ms).
+Every `ProxyMap` lookup in the process is serialised on one lock, because
+JavaScript PAC engines in proxylib 1.0 crash on concurrent use.

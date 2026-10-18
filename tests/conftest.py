@@ -117,3 +117,136 @@ def tls_server() -> Iterator[TLSServer]:
 def client_context() -> ssl.SSLContext:
     """A client context trusting the test CA and holding no identity yet."""
     return ssl.create_default_context(cafile=str(DATA / "ca.pem"))
+
+
+class EchoServer:
+    """A loopback TCP server that echoes each connection's bytes back."""
+
+    def __init__(self) -> None:
+        self._listener = socket.create_server(("127.0.0.1", 0))
+        self._listener.settimeout(0.2)
+        self.port = self._listener.getsockname()[1]
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._serve, daemon=True)
+
+    def __enter__(self) -> "EchoServer":
+        self._thread.start()
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self._stop.set()
+        self._thread.join(5)
+        self._listener.close()
+
+    def _serve(self) -> None:
+        while not self._stop.is_set():
+            try:
+                raw, _ = self._listener.accept()
+            except socket.timeout:
+                continue
+            threading.Thread(target=self._echo, args=(raw,), daemon=True).start()
+
+    @staticmethod
+    def _echo(raw: socket.socket) -> None:
+        with raw:
+            raw.settimeout(5)
+            try:
+                while True:
+                    chunk = raw.recv(65536)
+                    if not chunk:
+                        return
+                    raw.sendall(chunk)
+            except OSError:
+                return
+
+
+def _pump(source: socket.socket, target: socket.socket) -> None:
+    try:
+        while True:
+            chunk = source.recv(65536)
+            if not chunk:
+                break
+            target.sendall(chunk)
+    except OSError:
+        pass
+    finally:
+        try:
+            target.shutdown(socket.SHUT_WR)
+        except OSError:
+            pass
+
+
+class UpstreamProxy:
+    """A minimal loopback CONNECT proxy standing in for a corporate proxy.
+
+    ``requests`` records each CONNECT target and its Proxy-Authorization
+    header; ``refuse=True`` answers 403.
+    """
+
+    def __init__(self, refuse: bool = False) -> None:
+        self.refuse = refuse
+        self.requests: list[tuple[str, str | None]] = []
+        self._listener = socket.create_server(("127.0.0.1", 0))
+        self._listener.settimeout(0.2)
+        self.port = self._listener.getsockname()[1]
+        self.url = f"http://127.0.0.1:{self.port}"
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._serve, daemon=True)
+
+    def __enter__(self) -> "UpstreamProxy":
+        self._thread.start()
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self._stop.set()
+        self._thread.join(5)
+        self._listener.close()
+
+    def _serve(self) -> None:
+        while not self._stop.is_set():
+            try:
+                raw, _ = self._listener.accept()
+            except socket.timeout:
+                continue
+            threading.Thread(target=self._handle, args=(raw,), daemon=True).start()
+
+    def _handle(self, client: socket.socket) -> None:
+        client.settimeout(10)
+        head = b""
+        while b"\r\n\r\n" not in head:
+            chunk = client.recv(4096)
+            if not chunk:
+                client.close()
+                return
+            head += chunk
+        lines = head.split(b"\r\n\r\n", 1)[0].decode("latin-1").split("\r\n")
+        target = lines[0].split(" ")[1]
+        auth = next(
+            (
+                l.split(":", 1)[1].strip()
+                for l in lines[1:]
+                if l.lower().startswith("proxy-authorization:")
+            ),
+            None,
+        )
+        self.requests.append((target, auth))
+        if self.refuse:
+            client.sendall(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n")
+            client.close()
+            return
+        host, port = target.rsplit(":", 1)
+        try:
+            # Test origins listen on 127.0.0.1 only; skip the unused ::1 attempt.
+            host = "127.0.0.1" if host == "localhost" else host.strip("[]")
+            origin = socket.create_connection((host, int(port)), timeout=10)
+        except OSError:
+            client.sendall(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
+            client.close()
+            return
+        client.sendall(b"HTTP/1.1 200 Connection established\r\n\r\n")
+        back = threading.Thread(target=_pump, args=(origin, client), daemon=True)
+        back.start()
+        _pump(client, origin)
+        back.join(10)
+        client.close()
+        origin.close()

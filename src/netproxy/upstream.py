@@ -1,0 +1,198 @@
+"""Reaching a destination: directly or through upstream proxies, then TLS if the route says so.
+
+Upstream proxies come from a proxylib ``ProxyMap`` (the route's ``upstream``,
+else the server's ``egress``). Its answers are tried in order, so a PAC
+result such as ``PROXY a:3128; DIRECT`` fails over. HTTP and HTTPS proxies
+are supported (``CONNECT``, Basic credentials from the proxy URL).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import base64
+import logging
+import ssl
+import threading
+from dataclasses import dataclass
+from typing import Any, List, Optional, Tuple
+
+from netimps import get_default_port, join_host
+
+from ._connection import Connection
+from ._credential import Credential
+from ._route import Action, Route
+from ._streams import start_tls
+from .exceptions import UpstreamError
+
+__all__ = ["UpstreamStream", "connect", "resolve_upstream"]
+
+_log = logging.getLogger("netproxy")
+
+# proxylib 1.0's JS PAC engines crash the interpreter on concurrent lookups,
+# so every ProxyMap lookup in the process goes through this one lock.
+_LOOKUP_LOCK = threading.Lock()
+
+# RFC 8305's recommended delay before racing the next address: a name such as
+# "localhost" with an unused ::1 would otherwise wait for that attempt to fail
+# (about 2 s on Windows, which retries refused loopback connections).
+_HAPPY_EYEBALLS = 0.25
+
+
+@dataclass
+class UpstreamStream:
+    """An open connection to a destination."""
+
+    reader: asyncio.StreamReader
+    writer: asyncio.StreamWriter
+    via: Optional[str]
+    """``host:port`` of the upstream proxy used, or ``None`` for direct."""
+    tls: bool
+    """Whether the proxy made a TLS connection to the destination."""
+
+
+def _as_proxymap(upstream: Any) -> Any:
+    if isinstance(upstream, str):
+        from proxylib import SimpleProxyMap
+
+        return SimpleProxyMap(upstream)
+    return upstream
+
+
+def _lookup(proxymap: Any, url: str) -> List[Any]:
+    with _LOOKUP_LOCK:
+        try:
+            answers = list(proxymap[url])
+        except KeyError:
+            return [None]
+    return answers or [None]
+
+
+async def resolve_upstream(
+    connection: Connection, route: Route, egress: Any = None
+) -> List[Any]:
+    """The upstream answers to try for ``connection``: proxylib ``Proxy``
+    objects and ``None`` (direct), in order."""
+    source = route.upstream if route.upstream is not None else egress
+    if source is None:
+        return [None]
+    proxymap = _as_proxymap(source)
+    return await asyncio.to_thread(_lookup, proxymap, connection.url)
+
+
+def _describe(proxy: Any) -> str:
+    # Never the credentials: only scheme, host and port.
+    return f"{proxy.scheme}://{join_host(proxy.host, proxy.port)}"
+
+
+async def _open_direct(
+    connection: Connection, timeout: float
+) -> Tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+    return await asyncio.wait_for(
+        asyncio.open_connection(
+            connection.host, connection.port, happy_eyeballs_delay=_HAPPY_EYEBALLS
+        ),
+        timeout,
+    )
+
+
+async def _open_via_proxy(
+    connection: Connection, proxy: Any, timeout: float
+) -> Tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+    scheme = (proxy.scheme or "http").lower()
+    if scheme not in ("http", "https"):
+        raise UpstreamError(f"{scheme} upstream proxies are not supported")
+    proxy_tls = ssl.create_default_context() if scheme == "https" else None
+    reader, writer = await asyncio.wait_for(
+        asyncio.open_connection(
+            proxy.host,
+            proxy.port or get_default_port(scheme),
+            ssl=proxy_tls,
+            server_hostname=proxy.host if proxy_tls else None,
+            happy_eyeballs_delay=_HAPPY_EYEBALLS,
+        ),
+        timeout,
+    )
+    try:
+        head = [
+            f"CONNECT {connection.authority} HTTP/1.1",
+            f"Host: {connection.authority}",
+        ]
+        if proxy.username:
+            token = f"{proxy.username}:{proxy.password or ''}".encode()
+            head.append(
+                f"Proxy-Authorization: Basic {base64.b64encode(token).decode()}"
+            )
+        writer.write(("\r\n".join(head) + "\r\n\r\n").encode("latin-1"))
+        response = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), timeout)
+        status_line = response.split(b"\r\n", 1)[0].decode("latin-1", "replace")
+        parts = status_line.split(" ", 2)
+        if len(parts) < 2 or not parts[1].startswith("2"):
+            raise UpstreamError(
+                f"{_describe(proxy)} refused CONNECT {connection.authority}: {status_line}"
+            )
+    except BaseException:
+        writer.close()
+        raise
+    return reader, writer
+
+
+async def _client_context(route: Route) -> ssl.SSLContext:
+    if isinstance(route.tls, ssl.SSLContext):
+        return route.tls
+    assert isinstance(route.tls, Credential)
+    return await asyncio.to_thread(route.tls.context)
+
+
+async def connect(
+    connection: Connection,
+    route: Route,
+    *,
+    egress: Any = None,
+    timeout: float = 30.0,
+) -> UpstreamStream:
+    """Open the connection ``route`` describes to ``connection``'s destination.
+
+    Raises :class:`~netproxy.exceptions.UpstreamError` when no upstream
+    answer works (the message lists each attempt, never proxy credentials)
+    and :class:`~netproxy.exceptions.CredentialUnavailableError` when a TLS
+    route's credential cannot be loaded. A REJECT route is a ``ValueError``:
+    the caller should not have asked.
+    """
+    if route.action is Action.REJECT:
+        raise ValueError("a REJECT route opens no connection")
+    context = await _client_context(route) if route.action is Action.TLS else None
+    failures = []
+    for answer in await resolve_upstream(connection, route, egress):
+        where = "direct" if answer is None else _describe(answer)
+        try:
+            if answer is None:
+                reader, writer = await _open_direct(connection, timeout)
+            else:
+                reader, writer = await _open_via_proxy(connection, answer, timeout)
+        except (OSError, asyncio.TimeoutError, asyncio.IncompleteReadError) as error:
+            failures.append(f"{where}: {error or type(error).__name__}")
+            _log.debug(
+                "netproxy: %s via %s failed: %s", connection.authority, where, error
+            )
+            continue
+        if context is not None:
+            try:
+                await start_tls(
+                    reader,
+                    writer,
+                    context,
+                    server_hostname=connection.host,
+                    timeout=timeout,
+                )
+            except (OSError, ssl.SSLError, asyncio.TimeoutError) as error:
+                writer.close()
+                raise UpstreamError(
+                    f"TLS to {connection.authority} via {where} failed: {error}"
+                ) from error
+        return UpstreamStream(
+            reader,
+            writer,
+            None if answer is None else _describe(answer),
+            context is not None,
+        )
+    raise UpstreamError(f"cannot reach {connection.authority}: " + "; ".join(failures))
