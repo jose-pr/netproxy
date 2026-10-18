@@ -6,7 +6,25 @@ import asyncio
 import ssl
 from typing import Optional
 
-__all__ = ["start_tls"]
+__all__ = ["close_stream", "start_tls"]
+
+
+async def close_stream(writer: asyncio.StreamWriter) -> None:
+    """Close ``writer`` and wait until its transport has really closed.
+
+    Waiting matters: a transport merely asked to close, when its loop
+    stops, is reported unclosed at garbage collection. The wait is bounded:
+    after a failed TLS handshake ``wait_closed`` can wait forever.
+    """
+    writer.close()
+    try:
+        await asyncio.wait_for(writer.wait_closed(), _CLOSE_WAIT)
+    except (OSError, asyncio.TimeoutError, ssl.SSLError):
+        pass
+
+
+_CLOSE_WAIT = 2.0
+"""Seconds to wait for a transport to finish closing."""
 
 
 async def start_tls(

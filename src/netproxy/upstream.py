@@ -21,7 +21,7 @@ from netimps import get_default_port, join_host
 from ._connection import Connection
 from ._credential import Credential
 from ._route import Action, Route
-from ._streams import start_tls
+from ._streams import close_stream, start_tls
 from .exceptions import UpstreamError
 
 __all__ = ["UpstreamStream", "connect", "resolve_upstream"]
@@ -148,7 +148,7 @@ async def _open_via_proxy(
                 f"{_describe(proxy)} refused CONNECT {connection.authority}: {status_line}"
             )
     except BaseException:
-        writer.close()
+        await close_stream(writer)
         raise
     return reader, writer
 
@@ -217,7 +217,7 @@ async def connect(
                     timeout=timeout,
                 )
             except (OSError, ssl.SSLError, asyncio.TimeoutError) as error:
-                writer.close()
+                await close_stream(writer)
                 raise UpstreamError(
                     f"TLS to {connection.authority} via {where} failed: {error}"
                 ) from error

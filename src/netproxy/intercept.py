@@ -26,7 +26,7 @@ from sslcontext.issuing import CertificateAuthority
 from ._connection import Connection
 from ._relay import relay
 from ._route import Action, Route, Router
-from ._streams import start_tls
+from ._streams import close_stream, start_tls
 from .exceptions import NetProxyError
 from .rules import AllOf, AnyOf, Host, Network
 
@@ -109,7 +109,7 @@ class Interceptor:
             _log.info(
                 "netproxy: client TLS for %s failed: %s", connection.authority, error
             )
-            upstream.writer.close()
+            await close_stream(upstream.writer)
             return
         await relay(
             reader,
