@@ -1,0 +1,184 @@
+name: Test
+
+# On-demand test workflow, kept separate from release.yml's own release-gate
+# test job so it can be run without cutting a release. Two ways to trigger it:
+#   - workflow_dispatch (optionally against a specific ref), for manual runs.
+#   - push of a tag matching "ci-*" (throwaway tag, delete after) so a run can
+#     be triggered and polled through the API or the CLI.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to test (branch, tag, or SHA)"
+        required: false
+        default: ""
+  push:
+    tags:
+      - "ci-*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Format check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.9"
+      - name: Install sslcontext from its repository (not on PyPI yet)
+        run: python -m pip install "sslcontext @ git+https://github.com/jose-pr/sslcontext@main"
+      - name: Install package with all extras
+        run: python -m pip install -e ".[dev]"
+      - name: Check formatting
+        run: python -m black --check src/ tests/
+
+  test:
+    name: Test (py${{ matrix.python-version }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Ubuntu full matrix over every supported version
+          - os: ubuntu-latest
+            python-version: "3.9"
+          - os: ubuntu-latest
+            python-version: "3.10"
+          - os: ubuntu-latest
+            python-version: "3.11"
+          - os: ubuntu-latest
+            python-version: "3.12"
+          - os: ubuntu-latest
+            python-version: "3.13"
+          - os: ubuntu-latest
+            python-version: "3.14"
+          # Windows/macOS matrix edges (oldest + newest supported)
+          - os: windows-latest
+            python-version: "3.9"
+          - os: windows-latest
+            python-version: "3.14"
+          - os: macos-latest
+            python-version: "3.9"
+          - os: macos-latest
+            python-version: "3.14"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install sslcontext from its repository (not on PyPI yet)
+        run: python -m pip install "sslcontext @ git+https://github.com/jose-pr/sslcontext@main"
+      - name: Install package with all extras
+        # Install every extra that has tests depending on it, or those tests
+        # skip (pytest.importorskip) and do not run.
+        run: python -m pip install -e ".[dev]"
+      - name: Run tests
+        # -rs prints the reason for every skip: a skip is not a pass.
+        run: python -m pytest -q -rs
+
+  # The declared floors, exercised: every runtime dependency and feature extra
+  # installed AT the lower bound pyproject.toml declares (`>=X.Y.0` -> `==X.Y.0`),
+  # on the oldest supported Python.
+  floors:
+    name: Test at the declared dependency floors
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.9"
+      - name: Pin every declared dependency to its floor
+        shell: python
+        run: |
+          import re
+          import subprocess
+          import sys
+
+          subprocess.run([sys.executable, "-m", "pip", "install", "-q", "tomli"], check=True)
+          import tomli
+
+          project = tomli.load(open("pyproject.toml", "rb"))["project"]
+          specs = list(project.get("dependencies", []))
+          for extra, deps in project.get("optional-dependencies", {}).items():
+              if extra not in ("dev", "docs"):
+                  specs += deps
+          pins = []
+          for spec in specs:
+              m = re.match(r"^\s*([A-Za-z0-9._-]+)(\[[^\]]*\])?\s*[^;]*?>=\s*([^,;\s]+)", spec)
+              if m:
+                  pins.append("%s==%s" % (m.group(1), m.group(3)))
+          open("floors.txt", "w").write("\n".join(pins) + "\n")
+          print("\n".join(pins) or "(no floors declared)")
+      - name: Install sslcontext from its repository (not on PyPI yet)
+        run: python -m pip install "sslcontext @ git+https://github.com/jose-pr/sslcontext@main"
+      - name: Install at the floors
+        run: python -m pip install -c floors.txt -e ".[dev]"
+      - name: Run tests
+        run: python -m pytest -q -rs
+
+  # What `pip install netproxy` gives with no extra: the library imports and
+  # routes, and the command line names its missing extra.
+  bare:
+    name: Bare install (py${{ matrix.python-version }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.9", "3.14"] # oldest + newest supported
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install sslcontext from its repository (not on PyPI yet)
+        run: python -m pip install "sslcontext @ git+https://github.com/jose-pr/sslcontext@main"
+      - name: Install with no extra
+        run: python -m pip install .
+      - name: The library imports and routes, and PcapRecorder names its extra
+        shell: bash
+        working-directory: ${{ runner.temp }}
+        run: |
+          python - <<'PY'
+          from importlib.resources import files
+
+          import netproxy
+          from netproxy.recording import PcapRecorder
+
+          root = files("netproxy")
+          for name in ("py.typed", "AGENTS.md"):
+              assert (root / name).is_file(), "the install does not ship %s" % name
+          router = netproxy.Router([("*.corp.example", netproxy.Route.direct())])
+          print(router.route(netproxy.Connection("a.corp.example", 443)))
+          try:
+              PcapRecorder("x.pcap")
+          except ImportError as exc:
+              assert "netproxy[capture]" in str(exc), exc
+          else:
+              raise SystemExit("PcapRecorder worked without the capture extra")
+          print("ok:", netproxy.__version__)
+          PY
+      - name: The command line without its extra names the extra
+        shell: bash
+        working-directory: ${{ runner.temp }}
+        run: |
+          status=0
+          python -m netproxy --help 2> stderr.txt || status=$?
+          cat stderr.txt
+          test "$status" = 1
+          test "$(cat stderr.txt)" = "netproxy: error: the command line needs the 'cli' extra: pip install \"netproxy[cli]\""
