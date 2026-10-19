@@ -70,10 +70,11 @@ def test_rejected_tunnel_closes_the_connection():
     with EchoServer() as echo:
         tunnel = Tunnel("127.0.0.1:0", f"127.0.0.1:{echo.port}", route=Route.reject())
         with ProxyServer(listen=(), tunnels=[tunnel]) as server:
-            # Closed without a reply; Windows reports the unread request as a reset.
+            # Closed without a reply. Windows reports the unread request as a
+            # reset, and Linux may refuse the half-close of a socket already shut.
             try:
                 assert talk(server.tunnel_address(tunnel), b"hello") == b""
-            except ConnectionError:
+            except OSError:
                 pass
 
 
