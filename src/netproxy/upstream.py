@@ -215,6 +215,9 @@ async def connect(
                 raise UpstreamError(
                     f"TLS to {connection.authority} via {where} failed: {error}"
                 ) from error
+            except BaseException:  # cancelled: no await is safe, nothing was sent
+                writer.transport.abort()
+                raise
         return UpstreamStream(
             reader,
             writer,

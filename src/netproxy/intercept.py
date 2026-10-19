@@ -25,7 +25,7 @@ from sslcontext.issuing import CertificateAuthority
 
 from ._connection import Connection
 from ._route import Action, Route, Router
-from ._streams import close_stream, start_tls
+from ._streams import start_tls
 from .exceptions import NetProxyError
 from .rules import AllOf, AnyOf, Host, Network
 
@@ -91,6 +91,7 @@ class Interceptor:
         except (NetProxyError, OSError, asyncio.TimeoutError) as error:
             await _fail(writer, error, connection.authority)
             return
+        relayed = False
         try:
             if reader._buffer:  # type: ignore[attr-defined]
                 # Bytes sent before our 200 would bypass the TLS handshake.
@@ -105,12 +106,17 @@ class Interceptor:
             await start_tls(
                 reader, writer, context, server_side=True, timeout=server.timeout
             )
+            relayed = True
         except (OSError, ssl.SSLError, asyncio.TimeoutError) as error:
             _log.info(
                 "netproxy: client TLS for %s failed: %s", connection.authority, error
             )
-            await close_stream(upstream.writer)
             return
+        finally:
+            if not relayed:
+                # Never used, so nothing to flush; aborting is safe even when
+                # cancelled, where awaiting a close would not be.
+                upstream.writer.transport.abort()
         await server.relay_session(connection, route, reader, writer, upstream)
 
 
