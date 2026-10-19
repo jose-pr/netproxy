@@ -331,8 +331,8 @@ Documents are read by anycfg. The format is the one a `#!<format>` first
 line names (`#!toml`, `#!yaml`, `#!json`, `#!ini`, also `#!/usr/bin/env
 yaml`; the line is not part of the document), else `format=`, else the one
 the file name's suffix selects (`.toml`, `.yaml`/`.yml`, `.json`, `.ini`;
-`.cfg` and no suffix select none), else TOML, or INI when no TOML reader is
-installed (Python 3.9/3.10 without `tomli`, which netproxy depends on). YAML
+`.cfg` and no suffix select none), else TOML (`tomllib`, or `tomli` before
+Python 3.11, a dependency). YAML
 needs the `yaml` extra (`ConfigError` naming it otherwise); an unknown `#!`
 format is a `ConfigError` listing the known ones. TOML keeps its own dialect
 (duplicate keys are errors, values typed). `loads` and `load` return plain

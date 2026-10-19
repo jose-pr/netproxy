@@ -33,7 +33,7 @@ Nothing yet.
   refused where the TLS library cannot log keys).
 - Configuration files (`netproxy.config`, default `netproxy/netproxy.cfg`),
   read with anycfg: TOML, or YAML (extra `yaml`), JSON or INI when the
-  first line says so (`#!yaml`); INI where no TOML reader is installed.
+  first line says so (`#!yaml`).
 - The `netproxy` command line
   (`run`, `check`, `pac`, `ca init`, `ca show`; extra `cli`).
 

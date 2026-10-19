@@ -1,8 +1,8 @@
 """Configuration files: read a document, then build a server from it.
 
 The file is ``netproxy.cfg``; its first line may name its format
-(``#!toml``, ``#!yaml``, ``#!json``, ``#!ini``), and without one it is TOML,
-or INI where no TOML reader is installed (see :func:`loads`). Documents are
+(``#!toml``, ``#!yaml``, ``#!json``, ``#!ini``), and without one it is TOML
+(see :func:`loads`). Documents are
 read by anycfg. :func:`loads` and :func:`load` return plain data. :func:`build_server` turns that data into an
 :class:`~netproxy.AsyncProxyServer`; :func:`load_server` does both. Relative
 paths in the document are relative to the file's directory. Secrets never
@@ -103,15 +103,6 @@ _TUNNEL_KEYS = {"listen", "target", "credential", "action", "upstream", "name"}
 _TOP_KEYS = {"server", "credentials", "rules", "default", "tunnels"}
 
 
-def _default_format() -> str:
-    """TOML when a TOML reader is installed (Python 3.11+, else ``tomli``), else INI."""
-    if sys.version_info >= (3, 11):
-        return "toml"
-    import importlib.util
-
-    return "toml" if importlib.util.find_spec("tomli") else "ini"
-
-
 def _format_for(path: Optional[str]) -> Optional[str]:
     """The format a file name selects; ``.cfg`` (and no suffix) select none."""
     if not path or FilePath(path).suffix.lower() in ("", ".cfg"):
@@ -131,9 +122,8 @@ def loads(
     The format is the one a ``#!<format>`` first line names (``#!toml``,
     ``#!yaml``, ``#!json``, ``#!ini``; the line is not part of the document),
     else ``format``, else the one ``path``'s suffix selects (``.toml``,
-    ``.yaml``/``.yml``, ``.json``, ``.ini``; not ``.cfg``), else TOML, or INI
-    when no TOML reader is installed. An INI document is read as described in
-    the module documentation. Bytes are strict UTF-8 (one leading BOM
+    ``.yaml``/``.yml``, ``.json``, ``.ini``; not ``.cfg``), else TOML. An INI
+    document is read as described in the module documentation. Bytes are strict UTF-8 (one leading BOM
     ignored). Raises :class:`ConfigError` with ``lineno``/``colno`` when
     known; the message never quotes the document.
     """
@@ -148,7 +138,7 @@ def loads(
     if text.startswith("\ufeff"):
         text = text[1:]
     declared, _ = formats.declared(text)
-    chosen = declared or format or _format_for(path) or _default_format()
+    chosen = declared or format or _format_for(path) or "toml"
     try:
         if declared:
             data = anycfg.loads(text)  # removes the #! line

@@ -94,13 +94,6 @@ def test_ini_has_the_same_shape(tmp_path):
     assert load(path) == blocked_named(EXPECTED)
 
 
-def test_without_a_toml_reader_the_default_is_ini(tmp_path, monkeypatch):
-    monkeypatch.setattr(config, "_default_format", lambda: "ini")
-    path = tmp_path / "netproxy.cfg"
-    path.write_text(INI, encoding="utf-8")
-    assert load(path) == blocked_named(EXPECTED)
-
-
 def test_a_known_suffix_names_the_format(tmp_path):
     path = tmp_path / "settings.json"
     path.write_text(json.dumps(EXPECTED), encoding="utf-8")
