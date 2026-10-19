@@ -13,11 +13,11 @@
 ## Environment
 
 One venv per interpreter in `.pyvenv/<version>-<os>-<arch>/`
-(`dotagents pyvenv`, `dotagents pyvenv 3.9`). `sslcontext` 2.x is not
-released yet: install the sibling checkout editable.
+(`dotagents pyvenv`, `dotagents pyvenv 3.9`); every dependency comes from
+PyPI (add `-e ../sslcontext` to work on both at once).
 
 ```bash
-.pyvenv/<tag>/Scripts/python -m pip install -e ../sslcontext -e ".[dev]"
+.pyvenv/<tag>/Scripts/python -m pip install -e ".[dev]"
 ```
 
 ## Checks

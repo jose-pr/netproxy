@@ -34,8 +34,6 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.9"
-      - name: Install sslcontext from its repository (not on PyPI yet)
-        run: python -m pip install "sslcontext @ git+https://github.com/jose-pr/sslcontext@main"
       - name: Install package with all extras
         run: python -m pip install -e ".[dev]"
       - name: Check formatting
@@ -77,8 +75,6 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install sslcontext from its repository (not on PyPI yet)
-        run: python -m pip install "sslcontext @ git+https://github.com/jose-pr/sslcontext@main"
       - name: Install package with all extras
         # Install every extra that has tests depending on it, or those tests
         # skip (pytest.importorskip) and do not run.
@@ -122,8 +118,6 @@ jobs:
                   pins.append("%s==%s" % (m.group(1), m.group(3)))
           open("floors.txt", "w").write("\n".join(pins) + "\n")
           print("\n".join(pins) or "(no floors declared)")
-      - name: Install sslcontext from its repository (not on PyPI yet)
-        run: python -m pip install "sslcontext @ git+https://github.com/jose-pr/sslcontext@main"
       - name: Install at the floors
         run: python -m pip install -c floors.txt -e ".[dev]"
       - name: Run tests
@@ -146,8 +140,6 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install sslcontext from its repository (not on PyPI yet)
-        run: python -m pip install "sslcontext @ git+https://github.com/jose-pr/sslcontext@main"
       - name: Install with no extra
         run: python -m pip install .
       - name: The library imports and routes, and PcapRecorder names its extra

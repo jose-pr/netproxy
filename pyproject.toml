@@ -20,7 +20,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "sslcontext>=2.0.0.dev0,<3",
+    "sslcontext>=2.0.0,<3",
     "proxylib>=1.0,<2",
     "netimps>=0.4.1,<0.5",
     "tomli>=2.0,<3; python_version < '3.11'",
