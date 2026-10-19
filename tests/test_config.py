@@ -7,6 +7,7 @@ import pytest
 
 import netproxy
 from conftest import DATA
+from netproxy._server import KEYLOG_SUPPORTED
 from netproxy import Action, Connection, ProxyServer
 from netproxy.config import build_router, build_server, load_server, loads
 from test_http_proxy import via_proxy
@@ -123,19 +124,31 @@ def test_tunnels_with_a_credential_are_tls(config_dir):
 
 
 def test_recording_settings_build_owned_recorders(config_dir):
+    keylog = 'keylog = "keys.log"\n' if KEYLOG_SUPPORTED else ""
     document = loads(
         DOCUMENT.replace(
             "timeout = 10\n",
-            'timeout = 10\nrecord = "out/proxy.pcapng"\nkeylog = "keys.log"\n'
-            "log_traffic = true\n",
+            'timeout = 10\nrecord = "out/proxy.pcapng"\n'
+            + keylog
+            + "log_traffic = true\n",
         )
     )
     (config_dir / "out").mkdir()
     server = build_server(document, base_dir=config_dir)
     kinds = sorted(type(r).__name__ for r in server.recorders)
     assert kinds == ["LogRecorder", "PcapRecorder"]
-    assert server.keylog == str(config_dir / "keys.log")
+    if KEYLOG_SUPPORTED:
+        assert server.keylog == str(config_dir / "keys.log")
     with Origin(tls=True) as origin, ProxyServer(server=server) as running:
         via_proxy(running, "GET", f"http://localhost:{origin.port}/rec")
     assert (config_dir / "out" / "proxy.pcapng").stat().st_size > 0
     assert server.recorders[1]._writer._closed  # closed by the server's aclose
+
+
+def test_keylog_where_the_tls_library_cannot_names_the_key(config_dir, monkeypatch):
+    from netproxy import _server
+
+    monkeypatch.setattr(_server, "KEYLOG_SUPPORTED", False)
+    document = loads(DOCUMENT.replace("timeout = 10\n", 'timeout = 10\nkeylog = "k"\n'))
+    with pytest.raises(netproxy.ConfigError, match="server.keylog"):
+        build_server(document, base_dir=config_dir)

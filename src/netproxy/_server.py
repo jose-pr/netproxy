@@ -6,6 +6,7 @@ import asyncio
 import logging
 import os
 import socket
+import ssl
 import threading
 from dataclasses import dataclass
 from typing import Any, Iterable, List, Optional, Set, Tuple, Union
@@ -25,6 +26,10 @@ __all__ = ["AsyncProxyServer", "ProxyServer", "Tunnel"]
 _log = logging.getLogger("netproxy")
 
 DEFAULT_LISTEN = "127.0.0.1:0"
+
+
+#: Whether this Python's TLS library writes key logs (LibreSSL builds do not).
+KEYLOG_SUPPORTED = hasattr(ssl._ssl._SSLContext, "keylog_filename")  # type: ignore[attr-defined]
 
 
 @dataclass(frozen=True)
@@ -125,6 +130,12 @@ class AsyncProxyServer:
         self.router: Routing = router if router is not None else Router()
         self.recorders = tuple(recorders)
         self._owned_recorders: List[Any] = []
+        if keylog is not None and not KEYLOG_SUPPORTED:
+            # Elsewhere setting keylog_filename would only add an attribute.
+            raise ValueError(
+                f"keylog needs a TLS library that logs keys (OpenSSL 1.1.1 or "
+                f"later); this Python uses {ssl.OPENSSL_VERSION}"
+            )
         self.keylog = os.fspath(keylog) if keylog is not None else None
         self.interceptor: Any = None
         if ca is not None:

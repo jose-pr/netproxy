@@ -415,6 +415,14 @@ class _Builder:
         if "allow_remote" in settings:
             options["allow_remote"] = settings["allow_remote"]
         if "keylog" in settings:
+            from ._server import KEYLOG_SUPPORTED
+
+            if not KEYLOG_SUPPORTED:
+                raise self.fail(
+                    "server.keylog",
+                    "this Python's TLS library cannot log keys (OpenSSL 1.1.1 or "
+                    "later can)",
+                )
             options["keylog"] = self.path(settings["keylog"], "server.keylog")
         recorders: List[Any] = []
         if settings.get("log_traffic"):

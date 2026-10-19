@@ -189,6 +189,9 @@ every relayed session (`netproxy.recording`); `keylog` is a file that
 receives, in the `SSLKEYLOGFILE` format, the secrets of every TLS
 connection the proxy makes or ends (set as each context's
 `keylog_filename`, including a context you passed in a route): a secret.
+It needs a TLS library that logs keys (OpenSSL 1.1.1 or later); with one
+that cannot (Apple's LibreSSL Python) `keylog` is a `ValueError`, and the
+configuration key `server.keylog` a `ConfigError`.
 `open_upstream`, `start_recording` and `relay_session` are the building
 blocks the listeners use, public for custom front-ends.
 

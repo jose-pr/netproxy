@@ -9,6 +9,7 @@ import pytest
 from conftest import DATA, EchoServer, data
 from netproxy import Credential, ProxyServer, Route, Router, Tunnel
 from netproxy.intercept import create_ca
+from netproxy._server import KEYLOG_SUPPORTED
 from netproxy.recording import LogRecorder, PcapRecorder
 from origins import Origin
 from test_http_proxy import via_proxy
@@ -118,6 +119,9 @@ def test_pcap_recorder_writes_the_plaintext_of_intercepted_mtls(tmp_path):
     assert b'"client_cn": "client-rsa"' in directions[True]
 
 
+@pytest.mark.skipif(
+    not KEYLOG_SUPPORTED, reason="this Python's TLS library writes no key log"
+)
 def test_keylog_receives_the_tls_secrets(tmp_path):
     router = Router([("localhost", Route.with_tls(credential()))])
     ca = create_ca(router)
@@ -149,3 +153,11 @@ def test_pcap_recorder_without_the_extra_names_it(monkeypatch, tmp_path):
     monkeypatch.setitem(sys.modules, "pktcap", None)
     with pytest.raises(ImportError, match=r"netproxy\[capture\]"):
         PcapRecorder(tmp_path / "x.pcap")
+
+
+def test_keylog_where_the_tls_library_cannot_is_refused(monkeypatch, tmp_path):
+    from netproxy import _server
+
+    monkeypatch.setattr(_server, "KEYLOG_SUPPORTED", False)
+    with pytest.raises(ValueError, match="keylog needs"):
+        ProxyServer(keylog=tmp_path / "keys.log")

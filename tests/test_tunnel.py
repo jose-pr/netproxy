@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import socket
+import ssl
 
 import pytest
 
@@ -45,7 +46,8 @@ def test_tunnel_gives_a_plain_tcp_client_mutual_tls(tls_server):
     )
     with ProxyServer(listen=(), tunnels=[tunnel]) as server:
         reply = talk(server.tunnel_address(tunnel), half_close=False)
-    assert reply.decode().split("\n") == ["client-rsa", "TLSv1.3"]
+    newest = "TLSv1.3" if ssl.HAS_TLSv1_3 else "TLSv1.2"
+    assert reply.decode().split("\n") == ["client-rsa", newest]
 
 
 def test_tunnel_connections_are_routed_by_listener_name(tls_server):
