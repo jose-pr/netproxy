@@ -93,6 +93,7 @@ _CREDENTIAL_KEYS = {
     "certificate",
     "key",
     "password_env",
+    "password_file",
     "verify",
     "cafile",
     "capath",
@@ -304,11 +305,18 @@ class _Builder:
                 self.path(table["certificate"], f"{where}.certificate")
             )
             key = table.get("key")
-            password = (
-                self.env_secret(table["password_env"], f"{where}.password_env")
-                if "password_env" in table
-                else None
-            )
+            if "password_env" in table and "password_file" in table:
+                raise self.fail(where, "give password_env or password_file, not both")
+            password: Any = None
+            if "password_env" in table:
+                password = self.env_secret(
+                    table["password_env"], f"{where}.password_env"
+                )
+            elif "password_file" in table:
+                # sslcontext reads it only if the key or bundle is encrypted.
+                password = FilePath(
+                    self.path(table["password_file"], f"{where}.password_file")
+                )
             try:
                 key_bytes = (
                     FilePath(self.path(key, f"{where}.key")).read_bytes()

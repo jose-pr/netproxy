@@ -170,3 +170,39 @@ def test_a_pac_egress_the_configuration_built_is_closed_with_the_server(config_d
     process = server.egress.script._runner._proc
     assert process.poll() is not None  # the helper has ended
     assert not server._owned
+
+
+P12_DOCUMENT = DOCUMENT.replace(
+    'certificate = "client-rsa.pem"\nkey = "client-rsa.key"\n',
+    'certificate = "client-rsa.p12"\n{password}\n',
+)
+
+
+@pytest.mark.parametrize("how", ["env", "file"])
+def test_a_pkcs12_credential(config_dir, monkeypatch, how):
+    import shutil
+
+    shutil.copy(DATA / "client-rsa.p12", config_dir / "client-rsa.p12")
+    if how == "env":
+        monkeypatch.setenv("NETPROXY_TEST_P12", "test")
+        password = 'password_env = "NETPROXY_TEST_P12"'
+    else:
+        (config_dir / "p12.pass").write_text("test\n")
+        password = 'password_file = "p12.pass"'
+    document = loads(P12_DOCUMENT.replace("{password}", password))
+    server = build_server(document, base_dir=config_dir)
+    with Origin(tls=True) as origin, ProxyServer(server=server) as running:
+        status, _, body = via_proxy(
+            running, "GET", f"http://localhost:{origin.port}/p12"
+        )
+    assert status == 200 and json.loads(body)["client_cn"] == "client-rsa"
+
+
+def test_password_env_and_file_together_are_refused(config_dir):
+    document = loads(
+        P12_DOCUMENT.replace(
+            "{password}", 'password_env = "X"\npassword_file = "p12.pass"'
+        )
+    )
+    with pytest.raises(netproxy.ConfigError, match="not both"):
+        build_server(document, base_dir=config_dir)

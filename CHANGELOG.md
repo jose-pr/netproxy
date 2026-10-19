@@ -39,6 +39,9 @@ Nothing yet.
 
 ### Changed
 
+- A `pem` credential's `certificate` may be a PKCS#12 bundle (`.p12`/`.pfx`)
+  or DER; `password_file` names a file holding the key's or bundle's
+  password, read only when needed (requires sslcontext 2.1).
 - Requires proxylib 2: answers are read with `proxylib.lookup`, and
   `egress = "system"` is `auto_proxy(environ={})` (the OS's settings only).
 - Rewritten from scratch on `asyncio` and the standard library's `ssl`.

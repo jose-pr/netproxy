@@ -3,3 +3,6 @@
 # A file a platform REQUIRES in CRLF (a .cmd that needs it, a signed manifest)
 # is named below as an exception, never by weakening the default.
 * text=auto eol=lf
+
+# Test credentials stored as DER bytes.
+*.p12 binary

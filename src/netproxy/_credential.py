@@ -89,8 +89,11 @@ class Credential:
         name: str = "",
         **context_options: Any,
     ) -> "Credential":
-        """A credential from a PEM certificate (+ chain) and key held in
-        memory (``key`` omitted: both are in ``certificate``)."""
+        """A credential from a certificate (+ chain) and key held in memory,
+        as :func:`sslcontext.load_pem` takes them: PEM or DER (``key``
+        omitted: both are in ``certificate``), or a PKCS#12 bundle as
+        ``certificate`` with no ``key``. ``password`` decrypts the key or
+        bundle (a value, a file, or a callable)."""
         return cls(pem=(certificate, key, password), name=name, **context_options)
 
     def invalidate(self) -> None:

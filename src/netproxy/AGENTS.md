@@ -115,7 +115,8 @@ class Credential:
 
 Exactly one source (else `ValueError`): an `sslcontext.Identity` (or a
 callable returning one); `pem=(certificate, key, password)` for
-`sslcontext.load_pem`; or `backend` (an `sslcontext.backends` name; unknown →
+`sslcontext.load_pem` (PEM or DER, or a PKCS#12 bundle as `certificate` with no
+`key`; `password` a value, a file or a callable); or `backend` (an `sslcontext.backends` name; unknown →
 `ValueError` at construction) with constructor `options` (`store`, `module`,
 `token`, `pin`, ...) and a `find_identity` `query` (`subject`, `thumbprint`,
 `label`, ...). `verify`/`cafile`/`capath`/`cadata`/`minimum_version` go to
@@ -371,7 +372,8 @@ options = { store = "MY" }        # the backend's constructor keywords
 query = { subject = "alice" }     # find_identity() keywords
 pin_env = "NETPROXY_WORK_PIN"     # or pin = "keystore" (OS dialog / PIN pad); PINs never in the file
 cafile = "corp-ca.pem"            # also capath; verify = false
-# backend = "pem": certificate = "...", key = "...", password_env = "..."
+# backend = "pem": certificate = "..." (PEM, DER, or a .p12/.pfx bundle with no key),
+#   key = "...", password_env = "..." or password_file = "..." (its first line)
 
 [[rules]]
 match = "*.corp.example"          # parse_matcher pattern, or a list (any of)

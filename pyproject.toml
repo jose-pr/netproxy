@@ -20,7 +20,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "sslcontext>=2.0.0,<3",
+    "sslcontext>=2.1.0,<3",
     "proxylib>=2.0,<3",
     "netimps>=0.4.1,<0.5",
     # Configuration files; TOML is read by tomllib, before 3.11 by tomli.
