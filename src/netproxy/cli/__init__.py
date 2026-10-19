@@ -1,9 +1,9 @@
 """The ``netproxy`` command line, built on duho, installed by the ``cli`` extra.
 
-    netproxy run -c netproxy.toml
-    netproxy check -c netproxy.toml https://api.corp.example/
-    netproxy pac -c netproxy.toml
-    netproxy ca init -c netproxy.toml
+    netproxy run -c netproxy.cfg
+    netproxy check -c netproxy.cfg https://api.corp.example/
+    netproxy pac -c netproxy.cfg
+    netproxy ca init -c netproxy.cfg
 
 Importing this package needs no duho; :func:`main` reports the missing extra.
 """

@@ -23,15 +23,19 @@ dependencies = [
     "sslcontext>=2.0.0,<3",
     "proxylib>=1.0,<2",
     "netimps>=0.4.1,<0.5",
+    # Configuration files; TOML is read by tomllib, before 3.11 by tomli.
+    "anycfg>=0.14.0,<0.15",
     "tomli>=2.0,<3; python_version < '3.11'",
 ]
 
 [project.optional-dependencies]
 cli = ["duho>=0.7.0,<0.8"]
+# Configuration files written in YAML (#!yaml, .yaml).
+yaml = ["anycfg[yaml]>=0.14.0,<0.15"]
 # PcapRecorder; TCPFlowWriter was added in pktcap 0.1.2.
 capture = ["pktcap>=0.1.2,<0.2"]
 # dukpy executes generated PAC scripts in the tests.
-dev = ["black", "build", "pytest", "dukpy", "netproxy[cli,capture]"]
+dev = ["black", "build", "pytest", "dukpy", "netproxy[cli,capture,yaml]"]
 docs = ["mkdocs", "mkdocs-material", "mkdocstrings[python]"]
 
 [project.scripts]

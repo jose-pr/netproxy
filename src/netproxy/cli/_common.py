@@ -16,7 +16,7 @@ class ConfigCommand(Cmd):
     """Base of the commands that read a netproxy configuration file."""
 
     config: Optional[str] = None
-    "The TOML configuration file. Omitted: NETPROXY_CONFIG, else netproxy/config.toml in the user's configuration directory"
+    "The configuration file (TOML unless its first line names another format: #!yaml, #!json, #!ini). Omitted: NETPROXY_CONFIG, else netproxy/netproxy.cfg in the user's configuration directory"
     ("--config", "-c")
 
     def config_path(self) -> Path:

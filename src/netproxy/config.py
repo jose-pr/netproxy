@@ -1,13 +1,15 @@
-"""TOML configuration: read a document, then build a server from it.
+"""Configuration files: read a document, then build a server from it.
 
-:func:`loads` and :func:`load` return plain data (TOML's own dialect: no
-duplicate keys, typed values). :func:`build_server` turns that data into an
+The file is ``netproxy.cfg``; its first line may name its format
+(``#!toml``, ``#!yaml``, ``#!json``, ``#!ini``), and without one it is TOML,
+or INI where no TOML reader is installed (see :func:`loads`). Documents are
+read by anycfg. :func:`loads` and :func:`load` return plain data. :func:`build_server` turns that data into an
 :class:`~netproxy.AsyncProxyServer`; :func:`load_server` does both. Relative
 paths in the document are relative to the file's directory. Secrets never
 live in the file: PINs and key passwords are named by environment variable
 (``pin_env``, ``password_env``), read when the credential is first used.
 
-Document shape (every table optional)::
+Document shape, in TOML (every table optional)::
 
     [server]
     listen = "127.0.0.1:3128"            # or a list
@@ -43,6 +45,13 @@ Document shape (every table optional)::
     listen = "127.0.0.1:15432"
     target = "db.corp.example:5432"
     credential = "work"                   # optional: makes the tunnel's route TLS
+
+In INI a dotted section nests (``[credentials.work]``, ``[server.ca]``),
+``[rules.<name>]`` and ``[tunnels.<name>]`` are list entries in file order
+with that ``name``, and values are typed: ``true``/``false`` (also
+``yes``/``no``/``on``/``off``), integers, decimals, and JSON lists, objects
+or strings (``match = ["*.corp.example", "corp"]``); anything else is a
+string.
 """
 
 from __future__ import annotations
@@ -94,52 +103,130 @@ _TUNNEL_KEYS = {"listen", "target", "credential", "action", "upstream", "name"}
 _TOP_KEYS = {"server", "credentials", "rules", "default", "tunnels"}
 
 
-def _toml() -> Any:
+def _default_format() -> str:
+    """TOML when a TOML reader is installed (Python 3.11+, else ``tomli``), else INI."""
     if sys.version_info >= (3, 11):
-        import tomllib
-    else:  # pragma: no cover - exercised on the 3.9/3.10 floor
-        import tomli as tomllib
-    return tomllib
+        return "toml"
+    import importlib.util
+
+    return "toml" if importlib.util.find_spec("tomli") else "ini"
 
 
-def loads(text: Union[str, bytes], *, path: Optional[str] = None) -> Dict[str, Any]:
-    """Parse TOML ``text`` into plain data. ``path`` only labels errors.
+def _format_for(path: Optional[str]) -> Optional[str]:
+    """The format a file name selects; ``.cfg`` (and no suffix) select none."""
+    if not path or FilePath(path).suffix.lower() in ("", ".cfg"):
+        return None
+    from anycfg import formats
 
-    Bytes are strict UTF-8 (one leading BOM ignored). Raises
-    :class:`ConfigError` with ``lineno``/``colno`` when known; the message
-    never quotes the document.
+    found = formats.find_for_filename(FilePath(path).name)
+    return found.name if found is not None else None
+
+
+def loads(
+    text: Union[str, bytes], *, path: Optional[str] = None, format: Optional[str] = None
+) -> Dict[str, Any]:
+    """Parse a configuration document into plain data. ``path`` labels errors
+    and, by its suffix, may name the format.
+
+    The format is the one a ``#!<format>`` first line names (``#!toml``,
+    ``#!yaml``, ``#!json``, ``#!ini``; the line is not part of the document),
+    else ``format``, else the one ``path``'s suffix selects (``.toml``,
+    ``.yaml``/``.yml``, ``.json``, ``.ini``; not ``.cfg``), else TOML, or INI
+    when no TOML reader is installed. An INI document is read as described in
+    the module documentation. Bytes are strict UTF-8 (one leading BOM
+    ignored). Raises :class:`ConfigError` with ``lineno``/``colno`` when
+    known; the message never quotes the document.
     """
+    import anycfg
+    from anycfg import formats
+
     if isinstance(text, bytes):
         try:
             text = text.decode("utf-8")
         except UnicodeDecodeError as error:
             raise ConfigError(f"not UTF-8 at byte {error.start}", path) from None
-    if text.startswith("﻿"):
+    if text.startswith("\ufeff"):
         text = text[1:]
-    tomllib = _toml()
+    declared, _ = formats.declared(text)
+    chosen = declared or format or _format_for(path) or _default_format()
     try:
-        return tomllib.loads(text)
-    except tomllib.TOMLDecodeError as error:
-        # Python 3.14 exposes the position; before that it is only in the text,
-        # as "(at line L, column C)". The text never contains document content.
-        lineno = getattr(error, "lineno", None)
-        colno = getattr(error, "colno", None)
-        text = str(error)
-        found = re.search(r"\(at line (\d+), column (\d+)\)", text)
-        if lineno is None and found:
-            lineno, colno = int(found.group(1)), int(found.group(2))
-        reason = getattr(error, "msg", None) or re.sub(r"\s*\(at [^)]*\)$", "", text)
-        raise ConfigError(reason, path, lineno, colno) from None
+        if declared:
+            data = anycfg.loads(text)  # removes the #! line
+        else:
+            data = anycfg.loads(text, format=chosen)
+    except anycfg.MissingDependencyError as error:
+        raise ConfigError(f"{chosen}: {error}", path) from None
+    except anycfg.UnsupportedFormatError as error:
+        raise ConfigError(str(error), path) from None
+    except anycfg.ParseError as error:
+        raise ConfigError(error.msg, path, error.lineno, error.colno) from None
+    except anycfg.ConfigError as error:
+        raise ConfigError(str(error), path) from None
+    if formats.get(chosen).name == "ini":
+        return _from_ini(data, path)
+    if not isinstance(data, dict):
+        raise ConfigError("the document is not a table", path)
+    return data
 
 
-def load(source: Union[str, "os.PathLike[str]"]) -> Dict[str, Any]:
-    """Read and parse the TOML file at ``source`` (``OSError`` if unreadable)."""
+def _ini_value(text: str) -> Any:
+    stripped = text.strip()
+    lowered = stripped.lower()
+    if lowered in ("true", "yes", "on"):
+        return True
+    if lowered in ("false", "no", "off"):
+        return False
+    if re.fullmatch(r"[+-]?\d+", stripped):
+        return int(stripped)
+    if re.fullmatch(r"[+-]?(\d+\.\d*|\.\d+)([eE][+-]?\d+)?", stripped):
+        return float(stripped)
+    if stripped[:1] in ("[", "{", '"'):
+        import json
+
+        try:
+            return json.loads(stripped)
+        except ValueError:
+            pass
+    return stripped
+
+
+def _from_ini(data: Dict[str, Dict[str, str]], path: Optional[str]) -> Dict[str, Any]:
+    """INI sections as the TOML document's shape (see the module documentation)."""
+    out: Dict[str, Any] = {}
+    for section, options in data.items():
+        values = {key: _ini_value(value) for key, value in options.items()}
+        parts = section.split(".")
+        if parts[0] in ("rules", "tunnels"):
+            if len(parts) != 2 or not parts[1]:
+                raise ConfigError(
+                    f"[{section}]: a {parts[0]} section is [{parts[0]}.<name>]", path
+                )
+            values.setdefault("name", parts[1])
+            out.setdefault(parts[0], []).append(values)
+            continue
+        table = out
+        for part in parts[:-1]:
+            table = table.setdefault(part, {})
+            if not isinstance(table, dict):
+                raise ConfigError(f"[{section}]: {part} is not a table", path)
+        if isinstance(table.get(parts[-1]), dict):
+            table[parts[-1]].update(values)  # a [a.b] seen before [a]
+        else:
+            table[parts[-1]] = values
+    return out
+
+
+def load(
+    source: Union[str, "os.PathLike[str]"], *, format: Optional[str] = None
+) -> Dict[str, Any]:
+    """Read and parse the configuration file at ``source`` (``OSError`` if
+    unreadable); the format is chosen as :func:`loads` chooses it."""
     path = FilePath(source)
-    return loads(path.read_bytes(), path=str(path))
+    return loads(path.read_bytes(), path=str(path), format=format)
 
 
 def default_path() -> FilePath:
-    """``NETPROXY_CONFIG``, else ``netproxy/config.toml`` in the platform's
+    """``NETPROXY_CONFIG``, else ``netproxy/netproxy.cfg`` in the platform's
     configuration directory (``%APPDATA%`` on Windows, ``$XDG_CONFIG_HOME`` or
     ``~/.config`` elsewhere)."""
     configured = os.environ.get(_CONFIG_ENV)
@@ -151,7 +238,7 @@ def default_path() -> FilePath:
         base = FilePath(
             os.environ.get("XDG_CONFIG_HOME") or FilePath.home() / ".config"
         )
-    return base / "netproxy" / "config.toml"
+    return base / "netproxy" / "netproxy.cfg"
 
 
 # ---------------------------------------------------------------- building
