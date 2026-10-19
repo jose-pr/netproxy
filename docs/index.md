@@ -20,6 +20,7 @@ Requires Python 3.9 or newer.
 | Extra | Adds | Needed for |
 | --- | --- | --- |
 | `cli` | `duho` | the `netproxy` command |
+| `yaml` | `anycfg[yaml]` (PyYAML) | configuration files written in YAML (`#!yaml`, `.yaml`) |
 | `capture` | `pktcap` | `PcapRecorder`: sessions written as a pcap/pcapng capture |
 
 ## 30-second tour
@@ -42,9 +43,9 @@ credential = "work"
 ```
 
 ```bash
-netproxy run -c netproxy.toml
+netproxy run -c netproxy.cfg
 curl -x http://127.0.0.1:3128 http://api.corp.example/   # sent as HTTPS with alice's certificate
-netproxy check -c netproxy.toml https://api.corp.example/  # which rule decides, without connecting
+netproxy check -c netproxy.cfg https://api.corp.example/  # which rule decides, without connecting
 ```
 
 The same from Python:

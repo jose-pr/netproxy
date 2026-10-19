@@ -31,7 +31,10 @@ Nothing yet.
   as a TCP connection in a pcap/pcapng file; `keylog=` writes the TLS
   secrets of every TLS connection the proxy owns (OpenSSL 1.1.1 or later;
   refused where the TLS library cannot log keys).
-- TOML configuration (`netproxy.config`) and the `netproxy` command line
+- Configuration files (`netproxy.config`, default `netproxy/netproxy.cfg`),
+  read with anycfg: TOML, or YAML (extra `yaml`), JSON or INI when the
+  first line says so (`#!yaml`); INI where no TOML reader is installed.
+- The `netproxy` command line
   (`run`, `check`, `pac`, `ca init`, `ca show`; extra `cli`).
 
 ### Changed

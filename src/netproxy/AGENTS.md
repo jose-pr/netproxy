@@ -319,22 +319,36 @@ is as sensitive as the credentials that opened the sessions.
 ## Configuration files (`netproxy.config`)
 
 ```python
-def loads(text: str | bytes, *, path: str | None = None) -> dict
-def load(source: str | os.PathLike) -> dict
+def loads(text: str | bytes, *, path: str | None = None, format: str | None = None) -> dict
+def load(source: str | os.PathLike, *, format: str | None = None) -> dict
 def default_path() -> pathlib.Path
 def build_router(document: Mapping, *, base_dir=None) -> Router
 def build_server(document: Mapping, *, base_dir=None, label="<document>") -> AsyncProxyServer
 def load_server(source: str | os.PathLike) -> AsyncProxyServer
 ```
 
-TOML (TOML's own dialect: duplicate keys are errors, values typed). `loads`
-and `load` return plain data; bytes are strict UTF-8, one leading BOM
-ignored. `build_*` turn data into objects; relative paths resolve against
+Documents are read by anycfg. The format is the one a `#!<format>` first
+line names (`#!toml`, `#!yaml`, `#!json`, `#!ini`, also `#!/usr/bin/env
+yaml`; the line is not part of the document), else `format=`, else the one
+the file name's suffix selects (`.toml`, `.yaml`/`.yml`, `.json`, `.ini`;
+`.cfg` and no suffix select none), else TOML, or INI when no TOML reader is
+installed (Python 3.9/3.10 without `tomli`, which netproxy depends on). YAML
+needs the `yaml` extra (`ConfigError` naming it otherwise); an unknown `#!`
+format is a `ConfigError` listing the known ones. TOML keeps its own dialect
+(duplicate keys are errors, values typed). `loads` and `load` return plain
+data; bytes are strict UTF-8, one leading BOM ignored. `build_*` turn data into objects; relative paths resolve against
 `base_dir` (the file's directory for `load_server`). Every failure is a
 `ConfigError` (`path`, `lineno`, `colno` when known; a `table.key: problem`
 message that never quotes the document); unknown tables and keys are errors.
-`default_path()` is `NETPROXY_CONFIG`, else `netproxy/config.toml` under
+`default_path()` is `NETPROXY_CONFIG`, else `netproxy/netproxy.cfg` under
 `%APPDATA%` (Windows) or `$XDG_CONFIG_HOME`/`~/.config`.
+
+In INI a dotted section nests (`[credentials.work]`, `[server.ca]`),
+`[rules.<name>]` and `[tunnels.<name>]` are list entries in file order whose
+`name` defaults to `<name>` (`[rules]` alone is a `ConfigError`), and values
+are typed: `true`/`false`/`yes`/`no`/`on`/`off`, integers, decimals, JSON
+lists, objects and quoted strings (`match = ["*.corp.example", "corp"]`);
+anything else is a string. The same document in TOML:
 
 ```toml
 [server]

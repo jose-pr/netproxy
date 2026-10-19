@@ -38,6 +38,7 @@ pip install netproxy
 | Extra | Adds | Needed for |
 | --- | --- | --- |
 | `cli` | `duho` | the `netproxy` command |
+| `yaml` | `anycfg[yaml]` (PyYAML) | configuration files written in YAML (`#!yaml`, `.yaml`) |
 | `capture` | `pktcap` | `PcapRecorder`: sessions written as a pcap/pcapng capture |
 
 ## Quick start
@@ -60,7 +61,7 @@ credential = "work"
 ```
 
 ```bash
-netproxy run -c netproxy.toml
+netproxy run -c netproxy.cfg
 curl -x http://127.0.0.1:3128 http://api.corp.example/   # sent as HTTPS with alice's certificate
 ```
 
@@ -83,10 +84,10 @@ asyncio.run(main())
 ## Command line
 
 ```bash
-netproxy run -c netproxy.toml          # serve
-netproxy check -c netproxy.toml https://api.corp.example/   # which rule and route, no connection
-netproxy pac -c netproxy.toml          # PAC script for browsers
-netproxy ca init -c netproxy.toml      # local CA for intercepting https:// clients
+netproxy run -c netproxy.cfg          # serve
+netproxy check -c netproxy.cfg https://api.corp.example/   # which rule and route, no connection
+netproxy pac -c netproxy.cfg          # PAC script for browsers
+netproxy ca init -c netproxy.cfg      # local CA for intercepting https:// clients
 ```
 
 ## API overview
@@ -99,7 +100,7 @@ netproxy ca init -c netproxy.toml      # local CA for intercepting https:// clie
 | `netproxy.intercept` | TLS interception with a name-constrained local CA |
 | `netproxy.recording` | recorders: a hook per session, a log, pcap files |
 | `netproxy.pac` | PAC scripts generated from the rules |
-| `netproxy.config` | TOML configuration files |
+| `netproxy.config` | configuration files (`netproxy.cfg`: TOML, or the format a `#!` first line names) |
 | `netproxy.exceptions` | the package's errors |
 
 ## Development
