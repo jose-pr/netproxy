@@ -13,13 +13,17 @@ async def close_stream(writer: asyncio.StreamWriter) -> None:
     """Close ``writer`` and wait until its transport has really closed.
 
     Waiting matters: a transport merely asked to close, when its loop
-    stops, is reported unclosed at garbage collection. The wait is bounded:
-    after a failed TLS handshake ``wait_closed`` can wait forever.
+    stops, is reported unclosed at garbage collection. The wait is bounded,
+    and a transport still open after it is aborted: a TLS shutdown the peer
+    never answers (Python before 3.11 has no shutdown timeout), or a failed
+    handshake, would otherwise keep it open.
     """
     writer.close()
     try:
         await asyncio.wait_for(writer.wait_closed(), _CLOSE_WAIT)
-    except (OSError, asyncio.TimeoutError, ssl.SSLError):
+    except asyncio.TimeoutError:
+        writer.transport.abort()
+    except (OSError, ssl.SSLError):
         pass
 
 
