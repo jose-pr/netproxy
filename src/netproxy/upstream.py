@@ -12,7 +12,6 @@ import asyncio
 import base64
 import logging
 import ssl
-import threading
 from dataclasses import dataclass, field
 from typing import Any, List, Optional, Tuple
 
@@ -27,10 +26,6 @@ from .exceptions import UpstreamError
 __all__ = ["UpstreamStream", "connect", "resolve_upstream"]
 
 _log = logging.getLogger("netproxy")
-
-# proxylib promises thread safety for PAC scripts but not for the OS
-# resolvers (WinHTTP, CFNetwork, libproxy), so lookups take turns.
-_LOOKUP_LOCK = threading.Lock()
 
 # RFC 8305's recommended delay before racing the next address: a name such as
 # "localhost" with an unused ::1 would otherwise wait for that attempt to fail
@@ -64,16 +59,6 @@ def _as_proxymap(upstream: Any) -> Any:
     return upstream
 
 
-def _lookup(proxymap: Any, url: str) -> List[Any]:
-    from proxylib import lookup
-
-    with _LOOKUP_LOCK:
-        try:
-            return list(lookup(proxymap, url))
-        except KeyError:  # no opinion
-            return [None]
-
-
 async def resolve_upstream(
     connection: Connection, route: Route, egress: Any = None
 ) -> List[Any]:
@@ -82,8 +67,12 @@ async def resolve_upstream(
     source = route.upstream if route.upstream is not None else egress
     if source is None:
         return [None]
-    proxymap = _as_proxymap(source)
-    return await asyncio.to_thread(_lookup, proxymap, connection.url)
+    from proxylib import alookup
+
+    try:
+        return list(await alookup(_as_proxymap(source), connection.url))
+    except KeyError:  # no opinion
+        return [None]
 
 
 def _describe(proxy: Any) -> str:

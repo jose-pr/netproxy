@@ -535,11 +535,9 @@ class _Builder:
             **options,
         )
         server._owned.extend(recorder.close for recorder in owned)
-        # A PAC egress runs its script in a helper process, ended by close().
-        for holder in (egress, getattr(egress, "script", None)):
-            if callable(getattr(holder, "close", None)):
-                server._owned.append(holder.close)
-                break
+        # A map may own a PAC helper process or an OS session; close() frees it.
+        if callable(getattr(egress, "close", None)):
+            server._owned.append(egress.close)
         return server
 
 

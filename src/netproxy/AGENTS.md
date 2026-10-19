@@ -152,10 +152,9 @@ SNI = `connection.host` (a `Credential` is built in a worker thread). Raises
 never proxy credentials) or the TLS handshake fails;
 `CredentialUnavailableError` from the credential; `ValueError` for a REJECT
 route. Connections race IPv6/IPv4 addresses (Happy Eyeballs, 250 ms).
-Answers are read with `proxylib.lookup`; a map with no opinion (`KeyError`)
-means direct. Every lookup in the process is serialised on one lock:
-proxylib does not promise thread safety for the OS resolvers (WinHTTP,
-CFNetwork, libproxy).
+Answers are read with `proxylib.alookup` (a worker thread per lookup;
+proxylib's maps are safe to share); a map with no opinion (`KeyError`) means
+direct.
 
 ## The server (`netproxy`)
 

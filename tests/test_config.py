@@ -170,9 +170,6 @@ def test_a_pac_egress_the_configuration_built_is_closed_with_the_server(config_d
     process = server.egress.script._runner._proc
     assert process.poll() is not None  # the helper has ended
     assert not server._owned
-    # proxylib 2.0's close() leaves the helper's pipes to the garbage collector.
-    process.stdin.close()
-    process.stdout.close()
 
 
 P12_DOCUMENT = DOCUMENT.replace(
