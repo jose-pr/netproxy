@@ -21,7 +21,7 @@ classifiers = [
 ]
 dependencies = [
     "sslcontext>=2.0.0,<3",
-    "proxylib>=1.0,<2",
+    "proxylib>=2.0,<3",
     "netimps>=0.4.1,<0.5",
     # Configuration files; TOML is read by tomllib, before 3.11 by tomli.
     "anycfg>=0.14.0,<0.15",

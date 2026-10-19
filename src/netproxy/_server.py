@@ -9,7 +9,7 @@ import socket
 import ssl
 import threading
 from dataclasses import dataclass
-from typing import Any, Iterable, List, Optional, Set, Tuple, Union
+from typing import Any, Callable, Iterable, List, Optional, Set, Tuple, Union
 
 from netimps import bind, is_wildcard, join_host, parse_listen, split_host
 
@@ -129,7 +129,8 @@ class AsyncProxyServer:
     ) -> None:
         self.router: Routing = router if router is not None else Router()
         self.recorders = tuple(recorders)
-        self._owned_recorders: List[Any] = []
+        # What the server built itself (from a configuration file) and closes.
+        self._owned: List[Callable[[], None]] = []
         if keylog is not None and not KEYLOG_SUPPORTED:
             # Elsewhere setting keylog_filename would only add an attribute.
             raise ValueError(
@@ -227,10 +228,9 @@ class AsyncProxyServer:
             await server.wait_closed()
         self._servers.clear()
         self._proxy_servers.clear()
-        # Recorders the server made (from a configuration file) are its to close.
-        for recorder in self._owned_recorders:
-            recorder.close()
-        self._owned_recorders.clear()
+        for close in self._owned:
+            close()
+        self._owned.clear()
 
     # ------------------------------------------------------- connections
 

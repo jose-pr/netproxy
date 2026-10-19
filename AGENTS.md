@@ -13,8 +13,10 @@
 ## Environment
 
 One venv per interpreter in `.pyvenv/<version>-<os>-<arch>/`
-(`dotagents pyvenv`, `dotagents pyvenv 3.9`); every dependency comes from
-PyPI (add `-e ../sslcontext` to work on both at once).
+(`dotagents pyvenv`, `dotagents pyvenv 3.9`). Dependencies come from PyPI
+(add `-e ../sslcontext` to work on both at once), except proxylib 2, which
+is not released yet: install it from a checkout of its `v2` branch and
+netproxy with `--no-deps`.
 
 ```bash
 .pyvenv/<tag>/Scripts/python -m pip install -e ".[dev]"

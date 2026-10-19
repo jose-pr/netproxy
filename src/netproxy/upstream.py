@@ -28,8 +28,8 @@ __all__ = ["UpstreamStream", "connect", "resolve_upstream"]
 
 _log = logging.getLogger("netproxy")
 
-# proxylib 1.0's JS PAC engines crash the interpreter on concurrent lookups,
-# so every ProxyMap lookup in the process goes through this one lock.
+# proxylib promises thread safety for PAC scripts but not for the OS
+# resolvers (WinHTTP, CFNetwork, libproxy), so lookups take turns.
 _LOOKUP_LOCK = threading.Lock()
 
 # RFC 8305's recommended delay before racing the next address: a name such as
@@ -58,19 +58,20 @@ class UpstreamStream:
 
 def _as_proxymap(upstream: Any) -> Any:
     if isinstance(upstream, str):
-        from proxylib import SimpleProxyMap
+        from proxylib import ProxyMap
 
-        return SimpleProxyMap(upstream)
+        return ProxyMap(upstream)  # a proxy URL, a PAC result or a PAC location
     return upstream
 
 
 def _lookup(proxymap: Any, url: str) -> List[Any]:
+    from proxylib import lookup
+
     with _LOOKUP_LOCK:
         try:
-            answers = list(proxymap[url])
-        except KeyError:
+            return list(lookup(proxymap, url))
+        except KeyError:  # no opinion
             return [None]
-    return answers or [None]
 
 
 async def resolve_upstream(

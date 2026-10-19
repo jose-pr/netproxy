@@ -11,14 +11,29 @@ from netproxy.pac import generate_pac
 from netproxy.rules import Host, HostRegex, Network, Path, Port
 
 pytest.importorskip("dukpy")
-from proxylib.pac import load  # noqa: E402
+from proxylib import lookup  # noqa: E402
+from proxylib.pac import loads  # noqa: E402
 
 PROXY = "127.0.0.1:3128"
 TLS = Route.with_tls(ssl.create_default_context())
 
 
+def _close(script) -> None:
+    script.close()  # ends the helper process
+    # proxylib 2.0's close() leaves the helper's pipes to the garbage
+    # collector, which reports them as unclosed files.
+    process = getattr(getattr(script, "_runner", None), "_proc", None)
+    for pipe in (getattr(process, "stdin", None), getattr(process, "stdout", None)):
+        if pipe is not None:
+            pipe.close()
+
+
 def evaluate(router: Router, url: str, **options) -> str:
-    answers = list(load(generate_pac(router, PROXY, **options))[url])
+    pac = loads(generate_pac(router, PROXY, **options))
+    try:
+        answers = lookup(pac, url)
+    finally:
+        _close(pac.script)
     first = answers[0]
     return "DIRECT" if first is None else f"{first.host}:{first.port}"
 

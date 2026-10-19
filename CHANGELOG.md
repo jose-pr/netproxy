@@ -39,6 +39,8 @@ Nothing yet.
 
 ### Changed
 
+- Requires proxylib 2: answers are read with `proxylib.lookup`, and
+  `egress = "system"` is `auto_proxy(environ={})` (the OS's settings only).
 - Rewritten from scratch on `asyncio` and the standard library's `ssl`.
   Twisted, the WSGI hosting and the TOML schema of 0.2 are gone; nothing of
   the 0.2 API remains.

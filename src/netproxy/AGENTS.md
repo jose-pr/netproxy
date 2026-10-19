@@ -75,8 +75,9 @@ class Route:
 `Action.TLS` means the proxy owns the TLS to the destination: a forwarded
 `http://` request is upgraded to HTTPS, and a CONNECT tunnel is intercepted
 (the client's TLS ends at the proxy, which needs a CA). `upstream`: `None`
-uses the server's egress; a string is a proxy URL, `"direct"`, or a PAC
-result (`"PROXY a:3128; DIRECT"`); any other object is a proxylib `ProxyMap`
+uses the server's egress; a string is a proxy URL, `"direct"`, a PAC
+result (`"PROXY a:3128; DIRECT"`) or a PAC location (loaded on first use),
+as `proxylib.ProxyMap(text)` reads it; any other object is a proxylib `ProxyMap`
 indexed with `connection.url`.
 
 ```python
@@ -150,8 +151,10 @@ SNI = `connection.host` (a `Credential` is built in a worker thread). Raises
 never proxy credentials) or the TLS handshake fails;
 `CredentialUnavailableError` from the credential; `ValueError` for a REJECT
 route. Connections race IPv6/IPv4 addresses (Happy Eyeballs, 250 ms).
-Every `ProxyMap` lookup in the process is serialised on one lock, because
-JavaScript PAC engines in proxylib 1.0 crash on concurrent use.
+Answers are read with `proxylib.lookup`; a map with no opinion (`KeyError`)
+means direct. Every lookup in the process is serialised on one lock:
+proxylib does not promise thread safety for the OS resolvers (WinHTTP,
+CFNetwork, libproxy).
 
 ## The server (`netproxy`)
 
@@ -388,8 +391,10 @@ target = "db.corp.example:5432"
 credential = "work"               # optional; implies action = "tls"
 ```
 
-`egress`: `"system"` → `proxylib.system_proxy()`, `"env"` →
-`EnvProxyConfig.from_env()`, `"auto"` → `proxylib.auto_proxy()`,
+`egress`: `"system"` → `proxylib.auto_proxy(environ={})` (the OS's settings,
+whatever the environment says), `"env"` → `proxylib.EnvProxyConfig()` (the
+proxy variables; a scheme with none set goes direct), `"auto"` →
+`proxylib.auto_proxy()` (the variables when any is set, else the OS's),
 `"pac:<url>"` → `proxylib.load_pac(url)` (fetched when the server is built;
 `OSError` if it cannot be), any other string is a proxy URL or PAC result.
 `pin_env`/`password_env` name environment variables read when the secret is

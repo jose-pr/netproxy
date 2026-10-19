@@ -143,6 +143,7 @@ def test_recording_settings_build_owned_recorders(config_dir):
         via_proxy(running, "GET", f"http://localhost:{origin.port}/rec")
     assert (config_dir / "out" / "proxy.pcapng").stat().st_size > 0
     assert server.recorders[1]._writer._closed  # closed by the server's aclose
+    assert not server._owned
 
 
 def test_keylog_where_the_tls_library_cannot_names_the_key(config_dir, monkeypatch):
@@ -152,3 +153,20 @@ def test_keylog_where_the_tls_library_cannot_names_the_key(config_dir, monkeypat
     document = loads(DOCUMENT.replace("timeout = 10\n", 'timeout = 10\nkeylog = "k"\n'))
     with pytest.raises(netproxy.ConfigError, match="server.keylog"):
         build_server(document, base_dir=config_dir)
+
+
+def test_a_pac_egress_the_configuration_built_is_closed_with_the_server(config_dir):
+    pytest.importorskip("dukpy")
+    script = config_dir / "proxy.pac"
+    script.write_text('function FindProxyForURL(url, host) { return "DIRECT"; }\n')
+    document = loads(
+        DOCUMENT.replace(
+            "timeout = 10\n", f'timeout = 10\negress = "pac:{script.as_uri()}"\n'
+        )
+    )
+    server = build_server(document, base_dir=config_dir)
+    with Origin() as origin, ProxyServer(server=server) as running:
+        via_proxy(running, "GET", f"http://127.0.0.1:{origin.port}/x")
+    process = server.egress.script._runner._proc
+    assert process.poll() is not None  # the helper has ended
+    assert not server._owned

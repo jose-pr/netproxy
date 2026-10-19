@@ -440,11 +440,11 @@ class _Builder:
             raise self.fail("server.egress", "expected a string")
         import proxylib
 
-        if value == "system":
-            return proxylib.system_proxy()
+        if value == "system":  # the OS's settings, whatever the environment says
+            return proxylib.auto_proxy(environ={})
         if value == "env":
-            return proxylib.EnvProxyConfig.from_env()
-        if value == "auto":
+            return proxylib.EnvProxyConfig()
+        if value == "auto":  # proxy variables when any is set, else the OS's
             return proxylib.auto_proxy()
         if value.startswith("pac:"):
             return proxylib.load_pac(value[4:])
@@ -516,16 +516,22 @@ class _Builder:
                 owned.append(PcapRecorder(target, format=kind))
             except ImportError as error:
                 raise self.fail("server.record", str(error)) from None
+        egress = self.egress(settings.get("egress"))
         server = AsyncProxyServer(
             router,
             listen=settings.get("listen"),
-            egress=self.egress(settings.get("egress")),
+            egress=egress,
             tunnels=tunnels,
             ca=self.ca(settings["ca"]) if "ca" in settings else None,
             recorders=recorders + owned,
             **options,
         )
-        server._owned_recorders.extend(owned)
+        server._owned.extend(recorder.close for recorder in owned)
+        # A PAC egress runs its script in a helper process, ended by close().
+        for holder in (egress, getattr(egress, "script", None)):
+            if callable(getattr(holder, "close", None)):
+                server._owned.append(holder.close)
+                break
         return server
 
 
