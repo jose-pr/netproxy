@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.3.0] - 2026-10-19
+
 ### Added
 
 - Routing: `Router`, `Rule`, `Route` (direct, TLS with a client credential,
@@ -25,7 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Recording (`netproxy.recording`): a `Recorder` hook per relayed session,
   `LogRecorder`, and `PcapRecorder` (extra `capture`) writing each session
   as a TCP connection in a pcap/pcapng file; `keylog=` writes the TLS
-  secrets of every TLS connection the proxy owns.
+  secrets of every TLS connection the proxy owns (OpenSSL 1.1.1 or later;
+  refused where the TLS library cannot log keys).
 - TOML configuration (`netproxy.config`) and the `netproxy` command line
   (`run`, `check`, `pac`, `ca init`, `ca show`; extra `cli`).
 
@@ -35,4 +40,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   Twisted, the WSGI hosting and the TOML schema of 0.2 are gone; nothing of
   the 0.2 API remains.
 
-[Unreleased]: https://github.com/jose-pr/netproxy/commits/main
+[Unreleased]: https://github.com/jose-pr/netproxy/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/jose-pr/netproxy/releases/tag/v0.3.0
