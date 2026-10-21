@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-22
+
 ### Changed
 
 - The command line ends through `duho.run`: Ctrl-C outside `netproxy run` ends with status
@@ -54,5 +56,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   Twisted, the WSGI hosting and the TOML schema of 0.2 are gone; nothing of
   the 0.2 API remains.
 
-[Unreleased]: https://github.com/jose-pr/netproxy/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/jose-pr/netproxy/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/jose-pr/netproxy/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/jose-pr/netproxy/releases/tag/v0.3.0

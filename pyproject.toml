@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "netproxy"
-version = "0.3.0"
+version = "0.3.1"
 authors = [{ name = "Jose A." }]
 description = "Rule-routed asyncio proxy server: per-destination mTLS with keystore client certificates, upstream proxy chaining, tunnels and TLS interception"
 readme = "README.md"
