@@ -109,3 +109,40 @@ def test_run_serves_until_stopped(config):
         process.wait(10)
         process.stdout.close()
         process.stderr.close()
+
+
+def test_help_and_a_usage_error_raise_system_exit():
+    with pytest.raises(SystemExit) as caught:
+        main(["--help"])
+    assert caught.value.code == 0
+    with pytest.raises(SystemExit) as caught:
+        main(["check"])
+    assert caught.value.code == 2
+
+
+def test_ctrl_c_stops_run_with_status_0(config, monkeypatch):
+    import netproxy.cli.run as run_module
+
+    def interrupted(coroutine):
+        coroutine.close()
+        raise KeyboardInterrupt
+
+    assert main(["ca", "init", "-c", str(config)]) == 0
+    monkeypatch.setattr(run_module.asyncio, "run", interrupted)
+    assert main(["run", "-c", str(config)]) == 0
+
+
+@pytest.mark.parametrize(
+    "raised, status", [(KeyboardInterrupt, 130), (BrokenPipeError, 1)]
+)
+def test_ctrl_c_elsewhere_and_a_closed_pipe_end_quietly(
+    config, monkeypatch, capsys, raised, status
+):
+    from netproxy.cli.check import Check
+
+    def fail(self):
+        raise raised
+
+    monkeypatch.setattr(Check, "__call__", fail)
+    assert main(["check", "-c", str(config), "www.example:443"]) == status
+    assert "Traceback" not in capsys.readouterr().err

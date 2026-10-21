@@ -405,8 +405,9 @@ needed (an unset variable means no PIN: signing fails at once).
 
 `pip install "netproxy[cli]"`; `netproxy` or `python -m netproxy`. Every
 command takes `-c/--config FILE` (default `default_path()`), and the root
-`-v`/`-q`/`--loglevel`. Exit status: `0` done, `1` failed, `2` invocation or
-configuration wrong; errors are one line on stderr.
+`-v`/`-q`/`--loglevel`. Exit status: `0` done, `1` failed (a closed standard
+output included), `2` invocation or configuration wrong, `130` Ctrl-C, except
+that `netproxy run` stops on Ctrl-C with `0`; errors are one line on stderr.
 
 | Command | Does | Output |
 | --- | --- | --- |

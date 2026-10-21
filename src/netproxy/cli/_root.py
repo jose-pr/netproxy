@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import Optional, Sequence
 
-from duho import AUTO, Cli, LoggingArgs
-from duho import main as run_main
+from duho import AUTO, Cli, LoggingArgs, run
 
 from ..exceptions import ConfigError, NetProxyError
 from .ca import Ca
@@ -30,5 +29,4 @@ class NetProxy(LoggingArgs, Cli):
 
 
 def execute(argv: Optional[Sequence[str]] = None) -> int:
-    status = run_main(NetProxy, list(argv) if argv is not None else None)
-    return int(status or 0)
+    return run(NetProxy, list(argv) if argv is not None else None, exit="parse")

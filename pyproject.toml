@@ -29,7 +29,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-cli = ["duho>=0.7.0,<0.8"]
+cli = ["duho>=0.7.8,<0.8"]
 # Configuration files written in YAML (#!yaml, .yaml).
 yaml = ["anycfg[yaml]>=0.14.0,<0.15"]
 # PcapRecorder; TCPFlowWriter was added in pktcap 0.1.2.
